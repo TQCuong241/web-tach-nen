@@ -1,4 +1,4 @@
-// CYBERMATTE STUDIO - FRONTEND JS CONTROLLER (VIDEO & IMAGE HYBRID ENGINE)
+// CYBERMATTE STUDIO - FRONTEND JS CONTROLLER (MAIN COPY.PY FRAME PIPELINE & TEST MODE)
 
 document.addEventListener('DOMContentLoaded', () => {
     let currentFileId = null;
@@ -46,18 +46,21 @@ document.addEventListener('DOMContentLoaded', () => {
     const outputFormatSelect = document.getElementById('outputFormatSelect');
     const downsampleSelect = document.getElementById('downsampleSelect');
     const startProcessBtn = document.getElementById('startProcessBtn');
+    const startTest10Btn = document.getElementById('startTest10Btn');
 
-    // Progress DOM Elements
+    // Progress & Log DOM Elements
     const progressCard = document.getElementById('progressCard');
     const progressBarFill = document.getElementById('progressBarFill');
     const percentVal = document.getElementById('percentVal');
     const frameVal = document.getElementById('frameVal');
     const fpsVal = document.getElementById('fpsVal');
     const etaVal = document.getElementById('etaVal');
+    const terminalBox = document.getElementById('terminalBox');
 
     // Result DOM Elements
     const resultCard = document.getElementById('resultCard');
     const resultVideo = document.getElementById('resultVideo');
+    const galleryGrid = document.getElementById('galleryGrid');
     const downloadBtn = document.getElementById('downloadBtn');
     const restartBtn = document.getElementById('restartBtn');
 
@@ -129,7 +132,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 isServerAvailable = true;
             }
         } catch (e) {
-            console.log("Server API not reachable, running Client-side mode.");
+            console.log("Server API not reachable.");
         }
 
         if (!isServerAvailable) {
@@ -158,6 +161,7 @@ document.addEventListener('DOMContentLoaded', () => {
         videoInfoCard.classList.remove('hidden');
         controlsCard.classList.remove('disabled-state');
         startProcessBtn.disabled = false;
+        if (startTest10Btn) startTest10Btn.disabled = false;
     }
 
     function renderMeta(filename, width, height, fps, duration, totalFrames, sizeMb, thumbUrl) {
@@ -187,6 +191,7 @@ document.addEventListener('DOMContentLoaded', () => {
         `;
         controlsCard.classList.add('disabled-state');
         startProcessBtn.disabled = true;
+        if (startTest10Btn) startTest10Btn.disabled = true;
     }
 
     // --- BACKGROUND MODE CONTROLS ---
@@ -248,34 +253,35 @@ document.addEventListener('DOMContentLoaded', () => {
         blurValDisplay.textContent = `${e.target.value}px`;
     });
 
-    // --- START PROCESSING HANDLER ---
+    // --- START PROCESSING FULL HANDLER ---
     startProcessBtn.addEventListener('click', async () => {
         if (!currentVideoFile && !currentFileId) return;
 
         controlsCard.classList.add('disabled-state');
         startProcessBtn.disabled = true;
+        if (startTest10Btn) startTest10Btn.disabled = true;
         progressCard.classList.remove('hidden');
         progressCard.scrollIntoView({ behavior: 'smooth' });
 
+        if (terminalBox) terminalBox.innerHTML = '<div>[SYSTEM LOG] Khởi chạy bóc tách khung hình...</div>';
+
         const selectedModel = modelSelect.value;
+        const upscaleSelect = document.getElementById('upscaleSelect');
+        const targetSizeSelect = document.getElementById('targetSizeSelect');
 
-        // On Local Server (`http://localhost:8000`), run Python worker
-        if (currentFileId && selectedModel !== 'auto' && window.location.hostname === 'localhost') {
-            const formData = new FormData();
-            formData.append('file_id', currentFileId);
-            formData.append('bg_type', selectedBgMode);
-            formData.append('bg_color', bgColorInput.value);
-            if (currentBgImageId) formData.append('bg_image_id', currentBgImageId);
-            const upscaleSelect = document.getElementById('upscaleSelect');
-            const targetSizeSelect = document.getElementById('targetSizeSelect');
+        const formData = new FormData();
+        formData.append('file_id', currentFileId);
+        formData.append('bg_type', selectedBgMode);
+        formData.append('bg_color', bgColorInput.value);
+        if (currentBgImageId) formData.append('bg_image_id', currentBgImageId);
+        formData.append('blur_radius', blurRadiusInput.value);
+        formData.append('output_format', outputFormatSelect.value);
+        formData.append('downsample_ratio', downsampleSelect.value);
+        formData.append('model_name', selectedModel);
+        formData.append('upscale_factor', upscaleSelect ? upscaleSelect.value : '1.0');
+        formData.append('target_size', targetSizeSelect ? targetSizeSelect.value : '0');
 
-            formData.append('blur_radius', blurRadiusInput.value);
-            formData.append('output_format', outputFormatSelect.value);
-            formData.append('downsample_ratio', downsampleSelect.value);
-            formData.append('model_name', selectedModel);
-            formData.append('upscale_factor', upscaleSelect ? upscaleSelect.value : '1.0');
-            formData.append('target_size', targetSizeSelect ? targetSizeSelect.value : '0');
-
+        if (currentFileId && window.location.hostname === 'localhost') {
             if (isImageFile) {
                 try {
                     const resp = await fetch('/api/process-image', { method: 'POST', body: formData });
@@ -290,21 +296,54 @@ document.addEventListener('DOMContentLoaded', () => {
                     const resp = await fetch('/api/process', { method: 'POST', body: formData });
                     const data = await resp.json();
                     if (data.task_id) {
-                        connectWebSocket(data.task_id);
+                        connectWebSocket(data.task_id, false);
                         return;
                     }
                 } catch (err) {}
             }
         }
 
-        // --- CLIENT-SIDE BROWSER PROCESSING (VERCEL / CLIENT MODE) ---
         runClientSideProcessor();
     });
+
+    // --- START TEST 10 FRAMES HANDLER ---
+    if (startTest10Btn) {
+        startTest10Btn.addEventListener('click', async () => {
+            if (!currentVideoFile && !currentFileId) return;
+
+            controlsCard.classList.add('disabled-state');
+            startProcessBtn.disabled = true;
+            startTest10Btn.disabled = true;
+            progressCard.classList.remove('hidden');
+            progressCard.scrollIntoView({ behavior: 'smooth' });
+
+            if (terminalBox) terminalBox.innerHTML = '<div>[SYSTEM LOG] Phân tích video và nạp mô hình IS-Net DIS Engine (bóc 10 khung hình test từ main copy.py)...</div>';
+
+            const upscaleSelect = document.getElementById('upscaleSelect');
+            const targetSizeSelect = document.getElementById('targetSizeSelect');
+
+            const formData = new FormData();
+            formData.append('file_id', currentFileId);
+            formData.append('num_frames', '10');
+            formData.append('target_size', targetSizeSelect ? targetSizeSelect.value : '1000');
+            formData.append('upscale_factor', upscaleSelect ? upscaleSelect.value : '3.0');
+            formData.append('model_name', modelSelect.value);
+
+            try {
+                const resp = await fetch('/api/process-test-10', { method: 'POST', body: formData });
+                const data = await resp.json();
+                if (data.task_id) {
+                    connectWebSocket(data.task_id, true);
+                }
+            } catch (err) {
+                appendLog(`Lỗi khởi tạo test: ${err.message}`);
+            }
+        });
+    }
 
     async function runClientSideProcessor() {
         try {
             if (isImageFile) {
-                // Single Image Matting
                 const imgElement = new Image();
                 imgElement.src = URL.createObjectURL(currentVideoFile);
                 await new Promise(r => imgElement.onload = r);
@@ -313,7 +352,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 dummyVideo.width = imgElement.width;
                 dummyVideo.height = imgElement.height;
 
-                // Create a temporary canvas representing the image
                 const canvas = document.createElement('canvas');
                 canvas.width = imgElement.width;
                 canvas.height = imgElement.height;
@@ -357,10 +395,19 @@ document.addEventListener('DOMContentLoaded', () => {
             progressCard.classList.add('hidden');
             controlsCard.classList.remove('disabled-state');
             startProcessBtn.disabled = false;
+            if (startTest10Btn) startTest10Btn.disabled = false;
         }
     }
 
-    function connectWebSocket(taskId) {
+    function appendLog(text) {
+        if (!terminalBox) return;
+        const line = document.createElement('div');
+        line.textContent = text;
+        terminalBox.appendChild(line);
+        terminalBox.scrollTop = terminalBox.scrollHeight;
+    }
+
+    function connectWebSocket(taskId, isTestMode = false) {
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const wsUrl = `${protocol}//${window.location.host}/ws/progress/${taskId}`;
 
@@ -369,12 +416,20 @@ document.addEventListener('DOMContentLoaded', () => {
             const data = JSON.parse(event.data);
             updateProgressUI(data);
 
+            if (data.log) {
+                appendLog(data.log);
+            }
+
             if (data.status === 'completed') {
                 websocket.close();
-                showResult(data);
+                if (isTestMode && data.extracted_images) {
+                    showTest10Result(data);
+                } else {
+                    showResult(data);
+                }
             } else if (data.status === 'failed') {
                 websocket.close();
-                runClientSideProcessor();
+                appendLog(`[ERROR] ${data.error || 'Unknown error'}`);
             }
         };
     }
@@ -400,6 +455,10 @@ document.addEventListener('DOMContentLoaded', () => {
         resultCard.classList.remove('hidden');
         resultCard.scrollIntoView({ behavior: 'smooth' });
 
+        if (galleryGrid) galleryGrid.classList.add('hidden');
+        const previewWrapper = document.getElementById('previewWrapper');
+        if (previewWrapper) previewWrapper.style.display = 'block';
+
         if (data.output_media_url) {
             resultVideo.src = data.output_media_url;
             resultVideo.load();
@@ -408,7 +467,37 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (data.download_url) {
             downloadBtn.href = data.download_url;
-            downloadBtn.setAttribute('download', data.output_filename || 'nobg_result.png');
+            downloadBtn.setAttribute('download', data.output_filename || 'nobg_result.mp4');
+            downloadBtn.innerHTML = '<i class="fa-solid fa-download"></i> TẢI VIDEO KẾT QUẢ VỀ MÁY';
+        }
+    }
+
+    function showTest10Result(data) {
+        progressCard.classList.add('hidden');
+        resultCard.classList.remove('hidden');
+        resultCard.scrollIntoView({ behavior: 'smooth' });
+
+        const previewWrapper = document.getElementById('previewWrapper');
+        if (previewWrapper) previewWrapper.style.display = 'none';
+
+        if (galleryGrid && data.extracted_images) {
+            galleryGrid.classList.remove('hidden');
+            galleryGrid.innerHTML = '';
+            data.extracted_images.forEach((imgUrl, idx) => {
+                const card = document.createElement('div');
+                card.style.cssText = 'background: #0f172a; border-radius: 8px; padding: 8px; text-align: center; border: 1px solid rgba(255,255,255,0.1);';
+                card.innerHTML = `
+                    <img src="${imgUrl}" style="width: 100%; height: 140px; object-fit: contain; background: repeating-conic-gradient(#1e293b 0% 25%, #0f172a 0% 50%) 50% / 16px 16px; border-radius: 6px;">
+                    <div style="font-size: 12px; margin-top: 6px; color: #94a3b8; font-weight: 600;">Frame ${idx + 1}</div>
+                `;
+                galleryGrid.appendChild(card);
+            });
+        }
+
+        if (data.download_url) {
+            downloadBtn.href = data.download_url;
+            downloadBtn.setAttribute('download', 'extracted_10_frames.zip');
+            downloadBtn.innerHTML = '<i class="fa-solid fa-file-zipper"></i> TẢI BỘ 10 ẢNH PNG (.ZIP)';
         }
     }
 

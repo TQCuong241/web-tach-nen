@@ -31,7 +31,7 @@ if hasattr(sys.stdout, 'reconfigure'):
     except Exception:
         pass
 
-from video_engine import process_video_task, VideoMattingEngine, parse_hex_color
+from video_engine import process_video_task, process_video_frames_test, VideoMattingEngine, parse_hex_color
 
 app = FastAPI(title="Professional Video & Image Background Removal Studio")
 
@@ -175,6 +175,73 @@ async def upload_bg_image(file: UploadFile = File(...)):
         "bg_filename": saved_filename,
         "bg_url": f"/api/media/{saved_filename}"
     }
+
+@app.post("/api/process-test-10")
+async def start_10_frames_test(
+    file_id: str = Form(...),
+    num_frames: int = Form(10),
+    target_size: int = Form(1000),
+    upscale_factor: float = Form(3.0),
+    model_name: str = Form("max")
+):
+    """Process 10-frame extraction & matting test with live console logs from main copy.py."""
+    video_path = None
+    for f in os.listdir(UPLOAD_DIR):
+        if f.startswith(file_id) and not f.endswith("_thumb.jpg"):
+            video_path = os.path.join(UPLOAD_DIR, f)
+            break
+
+    if not video_path or not os.path.exists(video_path):
+        raise HTTPException(status_code=404, detail="Video file not found.")
+
+    task_id = f"task_test_{uuid.uuid4().hex[:10]}"
+    tasks_progress[task_id] = {
+        "status": "queued",
+        "percent": 0,
+        "current_frame": 0,
+        "total_frames": num_frames,
+        "logs": [],
+        "extracted_images": []
+    }
+
+    def run_worker():
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+        def progress_cb(data):
+            if "log" in data:
+                tasks_progress[task_id]["logs"].append(data["log"])
+            tasks_progress[task_id].update(data)
+            if task_id in active_websockets:
+                for ws in active_websockets[task_id]:
+                    try:
+                        loop.run_until_complete(ws.send_json(tasks_progress[task_id]))
+                    except Exception:
+                        pass
+
+        try:
+            res = process_video_frames_test(
+                video_path=video_path,
+                output_dir=OUTPUT_DIR,
+                num_frames_to_extract=num_frames,
+                target_size=target_size,
+                upscale_factor=upscale_factor,
+                engine_type=model_name,
+                progress_callback=progress_cb
+            )
+            tasks_progress[task_id]["status"] = "completed"
+            tasks_progress[task_id]["percent"] = 100
+            tasks_progress[task_id]["extracted_images"] = [f"/api/media-output/{f}" for f in res["extracted_files"]]
+            tasks_progress[task_id]["download_url"] = f"/api/download/{res['zip_file']}"
+        except Exception as e:
+            print(f"[Test Worker Error] {e}")
+            tasks_progress[task_id]["status"] = "failed"
+            tasks_progress[task_id]["error"] = str(e)
+
+    thread = threading.Thread(target=run_worker, daemon=True)
+    thread.start()
+
+    return {"task_id": task_id, "status": "started"}
 
 @app.post("/api/process-image")
 async def process_single_image_endpoint(

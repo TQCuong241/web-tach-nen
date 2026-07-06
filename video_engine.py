@@ -221,27 +221,109 @@ class VideoMattingEngine:
             return cv2.cvtColor(composite_rgb, cv2.COLOR_RGB2BGR)
 
 
-def extract_audio(video_path, output_audio_path):
-    if not shutil.which("ffmpeg"):
-        return False
-    try:
-        cmd = ["ffmpeg", "-y", "-i", video_path, "-vn", "-acodec", "copy", output_audio_path]
-        res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
-        return res.returncode == 0 and os.path.exists(output_audio_path)
-    except Exception:
-        return False
+def process_video_frames_test(
+    video_path: str,
+    output_dir: str,
+    num_frames_to_extract: int = 10,
+    target_size: int = 1000,
+    upscale_factor: float = 3.0,
+    engine_type: str = 'max',
+    progress_callback = None
+):
+    """
+    TÁCH VÀ XUẤT 10 BỨC ẢNH TEST TỪ MAIN COPY.PY:
+    Phân tích video -> Trích xuất & Tách nền đúng num_frames_to_extract bức ảnh PNG trong suốt -> Xuất log từng frame!
+    """
+    if cv2 is None or np is None:
+        raise RuntimeError("OpenCV is required for video frame processing.")
 
-def merge_audio(video_path, audio_path, output_video_path):
-    if not shutil.which("ffmpeg") or not os.path.exists(audio_path):
-        shutil.copy(video_path, output_video_path)
-        return
-    try:
-        cmd = ["ffmpeg", "-y", "-i", video_path, "-i", audio_path, "-c:v", "copy", "-c:a", "aac", "-shortest", output_video_path]
-        res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
-        if res.returncode != 0 or not os.path.exists(output_video_path):
-            shutil.copy(video_path, output_video_path)
-    except Exception:
-        shutil.copy(video_path, output_video_path)
+    os.makedirs(output_dir, exist_ok=True)
+    base_name = os.path.splitext(os.path.basename(video_path))[0]
+
+    cap = cv2.VideoCapture(video_path)
+    if not cap.isOpened():
+        raise ValueError(f"Could not open video file: {video_path}")
+
+    frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    print("=" * 80)
+    print(f"Mo video thanh cong: {base_name}")
+    print(f"Tong so frame: {frame_count}")
+    print(f"Trich xuat & Tach nen {num_frames_to_extract} frame (AI Matting)...")
+    print("=" * 80)
+
+    if num_frames_to_extract <= 1:
+        indices = [0]
+    else:
+        indices = [int(i * (frame_count - 1) / (num_frames_to_extract - 1)) for i in range(num_frames_to_extract)]
+
+    engine = VideoMattingEngine(model_name="isnet-general-use", engine_type=engine_type)
+    engine.reset_rec_states()
+
+    extracted_files = []
+    log_messages = []
+
+    start_time = time.time()
+    for i, idx in enumerate(indices):
+        cap.set(cv2.CAP_PROP_POS_FRAMES, idx)
+        ret, frame = cap.read()
+        if not ret:
+            continue
+
+        frame_start_time = time.time()
+        rgba_np = engine.process_frame(frame, upscale_factor=upscale_factor)
+
+        # Căn vuông sprite nếu target_size > 0
+        if target_size > 0:
+            h_f, w_f, _ = rgba_np.shape
+            if w_f > h_f:
+                diff = w_f - h_f
+                top_pad, bottom_pad = diff // 2, diff - diff // 2
+                left_pad, right_pad = 0, 0
+            else:
+                diff = h_f - w_f
+                left_pad, right_pad = diff // 2, diff - diff // 2
+                top_pad, bottom_pad = 0, 0
+
+            padded = cv2.copyMakeBorder(rgba_np, top_pad, bottom_pad, left_pad, right_pad, cv2.BORDER_CONSTANT, value=(0, 0, 0, 0))
+            rgba_np = cv2.resize(padded, (target_size, target_size), interpolation=cv2.INTER_AREA)
+
+        output_name = f"frame_{i+1:03d}.png"
+        output_path = os.path.join(output_dir, output_name)
+
+        out_pil = Image.fromarray(rgba_np)
+        out_pil.save(output_path, "PNG", optimize=True)
+
+        elapsed = time.time() - frame_start_time
+        log_line = f"[{i+1}/{num_frames_to_extract}] Frame {idx} -> {output_name} ({elapsed:.2f}s)"
+        print(log_line)
+        log_messages.append(log_line)
+        extracted_files.append(output_name)
+
+        if progress_callback:
+            progress_callback({
+                "status": "processing",
+                "current_frame": i + 1,
+                "total_frames": num_frames_to_extract,
+                "percent": int(((i + 1) / num_frames_to_extract) * 100),
+                "log": log_line,
+                "fps": round(1.0 / elapsed, 1) if elapsed > 0 else 0.0
+            })
+
+    cap.release()
+    print("\nDA HOAN THANH TACH NEN 10 KHUNG HINH TEST!")
+
+    zip_filename = f"{base_name}_10_frames.zip"
+    zip_path = os.path.join(output_dir, zip_filename)
+    with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+        for fname in extracted_files:
+            zipf.write(os.path.join(output_dir, fname), arcname=fname)
+
+    return {
+        "output_dir": output_dir,
+        "extracted_files": extracted_files,
+        "zip_file": zip_filename,
+        "log_messages": log_messages
+    }
 
 
 def process_video_task(
@@ -259,12 +341,6 @@ def process_video_task(
     target_size: int = 0,
     progress_callback = None
 ):
-    """
-    LUỒNG CHUẨN TỪ MAIN COPY.PY:
-    1. Mở video, đọc tổng số frame (ví dụ 240 frames) & FPS gốc (ví dụ 24 FPS).
-    2. Phân tách bóc nền từng khung hình ảnh tĩnh (Frame 1 -> Frame 240) sử dụng IS-Net DIS High Precision AI.
-    3. Ghép khung hình đã tách nền lại thành video hoàn chỉnh đúng với tốc độ FPS và thời lượng video gốc!
-    """
     if cv2 is None or np is None:
         raise RuntimeError("OpenCV is required for video file processing.")
 
@@ -320,7 +396,6 @@ def process_video_task(
     start_time = time.time()
     frame_idx = 0
 
-    # Process EVERY SINGLE FRAME (100% frame-by-frame)
     while True:
         ret, frame_bgr = cap.read()
         if not ret:
@@ -330,7 +405,6 @@ def process_video_task(
         frame_start = time.time()
         rgba_np = engine.process_frame(frame_bgr, downsample_ratio=downsample_ratio, upscale_factor=upscale_factor)
 
-        # Căn vuông sprite nếu target_size > 0 (từ main copy.py)
         if target_size > 0:
             h_f, w_f, _ = rgba_np.shape
             if w_f > h_f:

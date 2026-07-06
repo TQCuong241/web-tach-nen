@@ -219,10 +219,13 @@
                     </div>
                 </div>
 
-                <!-- START BUTTON -->
-                <div class="action-row">
-                    <button class="btn btn-primary btn-glow" id="startProcessBtn" disabled>
-                        <i class="fa-solid fa-play"></i> BẮT ĐẦU TÁCH NỀN VIDEO
+                <!-- ACTION BUTTONS -->
+                <div class="action-row" style="display: flex; gap: 15px; flex-wrap: wrap;">
+                    <button class="btn btn-primary btn-glow" id="startProcessBtn" disabled style="flex: 1;">
+                        <i class="fa-solid fa-play"></i> BẮT ĐẦU TÁCH NỀN VIDEO (FULL)
+                    </button>
+                    <button class="btn btn-secondary btn-glow" id="startTest10Btn" disabled style="flex: 1; background: linear-gradient(135deg, #ec4899, #8b5cf6); color: white;">
+                        <i class="fa-solid fa-flask"></i> 🧪 TEST TÁCH 10 FRAME & XUẤT LOG
                     </button>
                 </div>
             </section>
@@ -231,8 +234,8 @@
             <!-- PROGRESS DASHBOARD (Hidden initially) -->
             <section class="section-card progress-section hidden" id="progressCard">
                 <div class="card-header">
-                    <h2><i class="fa-solid fa-spinner fa-spin"></i> Đang Tách Nền Video Theo Khung Hình</h2>
-                    <p class="sub-text">Hệ thống AI đang phân tích & bóc tách từng khung hình frame-by-frame.</p>
+                    <h2><i class="fa-solid fa-spinner fa-spin"></i> Đang Tách Nền theo main copy.py</h2>
+                    <p class="sub-text">Hệ thống AI IS-Net DIS đang bóc tách từng khung hình frame-by-frame và ghi log chi tiết.</p>
                 </div>
 
                 <div class="progress-container">
@@ -257,6 +260,11 @@
                             <span class="stat-value" id="etaVal">--:--</span>
                         </div>
                     </div>
+
+                    <!-- REAL-TIME LOG CONSOLE TERMINAL -->
+                    <div class="terminal-box" id="terminalBox" style="margin-top: 20px; background: #030712; border: 1px solid #1f2937; border-radius: 8px; padding: 15px; font-family: monospace; color: #10b981; font-size: 13px; max-height: 200px; overflow-y: auto; text-align: left;">
+                        <div>[SYSTEM LOG] Sẵn sàng phân tích video và chạy IS-Net DIS Engine...</div>
+                    </div>
                 </div>
             </section>
 
@@ -268,11 +276,15 @@
                     <p class="sub-text">Tải kết quả video về máy hoặc tiến hành tách nền video khác.</p>
                 </div>
 
-                <!-- VIDEO PLAYER -->
+                <!-- VIDEO / IMAGE PREVIEW CONTAINER -->
                 <div class="comparison-container">
                     <div class="video-preview-wrapper" id="previewWrapper">
                         <video id="resultVideo" controls autoplay loop muted class="result-video-player"></video>
                     </div>
+                </div>
+
+                <!-- 10-IMAGE FRAME GALLERY GRID -->
+                <div class="gallery-grid hidden" id="galleryGrid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 15px; margin-bottom: 25px; max-height: 450px; overflow-y: auto; padding: 15px; background: rgba(15, 23, 42, 0.6); border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.1);">
                 </div>
 
                 <!-- DOWNLOAD & RESTART BUTTONS -->
