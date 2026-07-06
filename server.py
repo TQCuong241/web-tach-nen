@@ -40,6 +40,10 @@ app.add_middleware(
 )
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+if not os.path.exists(os.path.join(BASE_DIR, "static")):
+    parent_dir = os.path.dirname(BASE_DIR)
+    if os.path.exists(os.path.join(parent_dir, "static")):
+        BASE_DIR = parent_dir
 
 # On Vercel or read-only environments, use /tmp
 try:
@@ -63,8 +67,8 @@ TEMPLATES_DIR = os.path.join(BASE_DIR, "templates")
 if os.path.exists(STATIC_DIR):
     try:
         app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"[Static Mount Error] {e}")
 
 # Task progress tracking dictionary
 tasks_progress: Dict[str, Dict[str, Any]] = {}
