@@ -444,7 +444,8 @@ def process_video_task(
         current_fps = frame_idx / elapsed if elapsed > 0 else 0.0
         percent = int((frame_idx / total_frames) * 100) if total_frames > 0 else 0
 
-        print(f"[{frame_idx}/{total_frames}] Frame {frame_idx-1} -> Processed ({frame_elapsed:.2f}s)")
+        log_line = f"[{frame_idx}/{total_frames}] Frame {frame_idx-1} -> Processed ({frame_elapsed:.2f}s)"
+        print(log_line)
 
         if progress_callback:
             progress_callback({
@@ -453,7 +454,8 @@ def process_video_task(
                 "total_frames": total_frames,
                 "percent": percent,
                 "fps": round(current_fps, 1),
-                "eta_seconds": int((total_frames - frame_idx) / current_fps) if current_fps > 0 else 0
+                "eta_seconds": int((total_frames - frame_idx) / current_fps) if current_fps > 0 else 0,
+                "log": log_line
             })
 
     cap.release()
