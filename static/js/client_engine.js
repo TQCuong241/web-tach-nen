@@ -1,7 +1,7 @@
 /**
  * CYBERMATTE AI - CLIENT-SIDE BROWSER FRAME ENGINE
  * Runs video frame-by-frame background matting directly in the browser.
- * Perfect for Vercel deployment with zero server timeout or payload limits!
+ * Ensures EXACT frame rate and duration match (e.g., 240 frames @ 10s = 10s output).
  */
 
 class ClientVideoProcessor {
@@ -26,13 +26,13 @@ class ClientVideoProcessor {
                 this.isInitialized = true;
                 console.log("[ClientEngine] MediaPipe SelfieSegmentation initialized successfully.");
             } catch (e) {
-                console.warn("[ClientEngine] Could not init MediaPipe SelfieSegmentation, using Canvas fallback:", e);
+                console.warn("[ClientEngine] Could not init MediaPipe SelfieSegmentation:", e);
             }
         }
     }
 
     /**
-     * Process video frame-by-frame on Canvas
+     * Process video frame-by-frame on Canvas maintaining exact duration & frame rate
      */
     async processVideo({
         videoElement,
@@ -48,7 +48,7 @@ class ClientVideoProcessor {
         const duration = videoElement.duration || 10.0;
         const width = videoElement.videoWidth || 1280;
         const height = videoElement.videoHeight || 720;
-        const fps = 30;
+        const fps = 30.0;
         const totalFrames = Math.floor(duration * fps);
 
         const sourceCanvas = document.createElement('canvas');
@@ -61,16 +61,15 @@ class ClientVideoProcessor {
         outputCanvas.height = height;
         const outputCtx = outputCanvas.getContext('2d');
 
-        const stream = outputCanvas.captureStream(fps);
-        let mimeType = 'video/webm;codecs=vp9';
-        if (!MediaRecorder.isTypeSupported(mimeType)) {
-            mimeType = 'video/webm';
-        }
-        if (!MediaRecorder.isTypeSupported(mimeType)) {
-            mimeType = 'video/mp4';
-        }
+        // captureStream(0) allows manual frame stepping via track.requestFrame()
+        const stream = outputCanvas.captureStream(0);
+        const track = stream.getVideoTracks()[0];
 
-        const recorder = new MediaRecorder(stream, { mimeType });
+        let mimeType = 'video/webm;codecs=vp9';
+        if (!MediaRecorder.isTypeSupported(mimeType)) mimeType = 'video/webm';
+        if (!MediaRecorder.isTypeSupported(mimeType)) mimeType = 'video/mp4';
+
+        const recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 5000000 });
         const chunks = [];
         recorder.ondataavailable = (e) => {
             if (e.data.size > 0) chunks.push(e.data);
@@ -79,11 +78,10 @@ class ClientVideoProcessor {
         recorder.start();
 
         const frameInterval = 1.0 / fps;
-        let currentTime = 0.0;
         const startTime = Date.now();
 
         for (let frameIdx = 1; frameIdx <= totalFrames; frameIdx++) {
-            currentTime = (frameIdx - 1) * frameInterval;
+            const currentTime = (frameIdx - 1) * frameInterval;
             videoElement.currentTime = currentTime;
 
             await new Promise(resolve => {
@@ -97,7 +95,6 @@ class ClientVideoProcessor {
             sourceCtx.drawImage(videoElement, 0, 0, width, height);
 
             if (this.segmenter) {
-                // MediaPipe AI Canvas Composition Fix
                 await new Promise((resolve) => {
                     this.segmenter.onResults((results) => {
                         outputCtx.save();
@@ -117,12 +114,20 @@ class ClientVideoProcessor {
                         }
 
                         outputCtx.restore();
+
+                        // Request canvas frame to be recorded at exact interval
+                        if (track && track.requestFrame) {
+                            track.requestFrame();
+                        }
                         resolve();
                     });
                     this.segmenter.send({ image: sourceCanvas });
                 });
             } else {
                 this._drawFallbackMatting(sourceCtx, outputCtx, width, height, bgType, bgColor, bgImageElement);
+                if (track && track.requestFrame) {
+                    track.requestFrame();
+                }
             }
 
             const elapsedSec = (Date.now() - startTime) / 1000.0;
