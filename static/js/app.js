@@ -103,12 +103,11 @@ document.addEventListener('DOMContentLoaded', () => {
         const videoUrl = URL.createObjectURL(file);
         sourceVideoElement.src = videoUrl;
 
-        // Try server upload if API available, else compute meta locally
         const formData = new FormData();
         formData.append('file', file);
 
         dropzoneContent.innerHTML = `
-            <div class="dropzone-icon"><div class="fa-solid fa-spinner fa-spin"></div></div>
+            <div class="dropzone-icon"><i class="fa-solid fa-spinner fa-spin"></i></div>
             <h3>Đang đọc thông tin video...</h3>
         `;
 
@@ -126,7 +125,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         if (!isServerAvailable) {
-            // Read metadata locally using HTML5 Video Element
             sourceVideoElement.onloadedmetadata = () => {
                 const width = sourceVideoElement.videoWidth || 1280;
                 const height = sourceVideoElement.videoHeight || 720;
@@ -237,7 +235,6 @@ document.addEventListener('DOMContentLoaded', () => {
     startProcessBtn.addEventListener('click', async () => {
         if (!currentVideoFile && !currentFileId) return;
 
-        // UI Transition to Progress
         controlsCard.classList.add('disabled-state');
         startProcessBtn.disabled = true;
         progressCard.classList.remove('hidden');
@@ -245,8 +242,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const selectedModel = modelSelect.value;
 
-        // Check if server processing is available & requested
-        if (currentFileId && selectedModel !== 'auto') {
+        // On Local Server (`http://localhost:8000`), run Python worker
+        if (currentFileId && selectedModel !== 'auto' && window.location.hostname === 'localhost') {
             const formData = new FormData();
             formData.append('file_id', currentFileId);
             formData.append('bg_type', selectedBgMode);
@@ -265,11 +262,15 @@ document.addEventListener('DOMContentLoaded', () => {
                     return;
                 }
             } catch (err) {
-                console.log("Falling back to Client-side browser frame matting...");
+                console.log("Python backend not responding, fallback to client-side browser matting...");
             }
         }
 
         // --- CLIENT-SIDE BROWSER FRAME PROCESSING (VERCEL MODE) ---
+        runClientSideProcessor();
+    });
+
+    async function runClientSideProcessor() {
         try {
             const res = await window.clientVideoProcessor.processVideo({
                 videoElement: sourceVideoElement,
@@ -292,7 +293,7 @@ document.addEventListener('DOMContentLoaded', () => {
             controlsCard.classList.remove('disabled-state');
             startProcessBtn.disabled = false;
         }
-    });
+    }
 
     function connectWebSocket(taskId) {
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -308,10 +309,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 showResult(data);
             } else if (data.status === 'failed') {
                 websocket.close();
-                alert(`Tách nền thất bại: ${data.error || 'Unknown error'}`);
-                progressCard.classList.add('hidden');
-                controlsCard.classList.remove('disabled-state');
-                startProcessBtn.disabled = false;
+                // Seamless automatic fallback to client-side browser processor on Vercel
+                runClientSideProcessor();
             }
         };
     }
