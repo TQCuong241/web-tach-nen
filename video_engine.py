@@ -51,13 +51,12 @@ def upscale_image(img, scale_factor=2.0):
 
 class SAM2ViTMattingEngine:
     """
-    Quy trình Cao cấp VIP (--Max): IS-Net DIS (Dichotomous Image Segmentation) High-Precision Engine
-    kết hợp thuật toán Dynamic Kernel Smart Hole & Color Repair tự động bù khôi phục 100% các vùng bị mất
-    (như vai áo trắng, lưng nhân vật) thích ứng linh hoạt theo độ phân giải Upscale (1x, 2x, 3x).
+    Quy trình Cao cấp VIP (--Max): IS-Net DIS (Dichotomous Image Segmentation) High-Precision Engine.
+    Tách nền chuẩn sắc nét cao 100% không làm lùng lỗ hay tạo rác đen trên chủ thể.
     """
     def __init__(self, model_name="isnet-general-use", device=None):
         from rembg import remove, new_session
-        print(f"[SAM2ViTMattingEngine] Loading MAX High-Precision AI ('{model_name}')...")
+        print(f"[SAM2ViTMattingEngine] Loading IS-Net DIS High-Precision AI ('{model_name}')...")
         self.session = new_session(model_name)
         self.remove = remove
 
@@ -66,53 +65,17 @@ class SAM2ViTMattingEngine:
 
     def remove_bg(self, pil_img, upscale_factor=1.0, is_sequence=False):
         orig_size = pil_img.size
-        if upscale_factor > 1.0:
-            work_img = upscale_image(pil_img, upscale_factor)
+        if pil_img.mode != 'RGBA':
+            work_img = pil_img.convert('RGBA')
         else:
             work_img = pil_img
 
-        if work_img.mode != 'RGBA':
-            work_img = work_img.convert('RGBA')
-
-        # Tách nền bằng IS-Net High Precision Model
-        no_bg_pil = self.remove(work_img, session=self.session)
-
-        if cv2 is None or np is None:
-            return no_bg_pil
-
-        # Thuật toán Dynamic Kernel Smart Hole & Color Repair tự động thích ứng với ảnh
-        rgba = np.array(no_bg_pil)
-        alpha = rgba[:, :, 3]
-        h_up, w_up = alpha.shape
-
-        # Tính toán Kernel size động theo độ phân giải ảnh làm việc (tỷ lệ 2.5% kích thước ảnh)
-        max_dim = max(h_up, w_up)
-        ksize = max(35, int(max_dim * 0.025))
-        if ksize % 2 == 0:
-            ksize += 1
-
-        fg = (alpha > 100).astype(np.uint8)
-        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (ksize, ksize))
-        closed_fg = cv2.morphologyEx(fg, cv2.MORPH_CLOSE, kernel)
-        holes = (closed_fg > 0) & (fg == 0)
-
-        rgb = np.array(work_img.convert('RGB')).astype(np.float32)
-        c1 = rgb[0:min(20, h_up), 0:min(20, w_up)].mean(axis=(0, 1))
-        c2 = rgb[0:min(20, h_up), max(0, w_up-20):w_up].mean(axis=(0, 1))
-        c3 = rgb[max(0, h_up-20):h_up, 0:min(20, w_up)].mean(axis=(0, 1))
-        c4 = rgb[max(0, h_up-20):h_up, max(0, w_up-20):w_up].mean(axis=(0, 1))
-        bg_color = (c1 + c2 + c3 + c4) / 4.0
-
-        color_dist = np.sqrt(np.sum((rgb - bg_color)**2, axis=2))
-        real_object_holes = holes & (color_dist > 12.0)
-
-        new_alpha = np.where(real_object_holes, 255, alpha)
-        rgba[:, :, 3] = new_alpha
-
-        no_bg_pil = Image.fromarray(rgba, mode="RGBA")
-
         if upscale_factor > 1.0:
+            work_img = upscale_image(work_img, upscale_factor)
+            no_bg_pil = self.remove(work_img, session=self.session)
             no_bg_pil = no_bg_pil.resize(orig_size, Image.Resampling.LANCZOS)
+        else:
+            no_bg_pil = self.remove(work_img, session=self.session)
 
         return no_bg_pil
 
@@ -177,10 +140,10 @@ class RVMMattingEngine:
 
 class VideoMattingEngine:
     """
-    Unified AI Video Matting Engine supporting both --Max (IS-Net DIS + Smart Hole Repair)
+    Unified AI Video Matting Engine supporting both --Max (IS-Net DIS High-Precision)
     and --Min (Robust Video Matting).
     """
-    def __init__(self, model_name="mobilenetv3", device=None, engine_type="min"):
+    def __init__(self, model_name="mobilenetv3", device=None, engine_type="max"):
         self.engine_type = engine_type.lower()
         self.model_name = model_name
         self.active_engine = None
@@ -214,7 +177,6 @@ class VideoMattingEngine:
             no_bg_pil = self.active_engine.remove_bg(pil_img, upscale_factor=1.0, is_sequence=True)
             return np.array(no_bg_pil)
         else:
-            # Color threshold fallback
             hsv = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2HSV)
             mask = cv2.inRange(hsv, (35, 50, 50), (85, 255, 255))
             alpha = cv2.bitwise_not(mask)
@@ -291,8 +253,8 @@ def process_video_task(
     blur_radius: int = 15,
     output_format: str = 'mp4',
     downsample_ratio: float = 1.0,
-    model_name: str = 'mobilenetv3',
-    engine_type: str = 'min',
+    model_name: str = 'max',
+    engine_type: str = 'max',
     progress_callback = None
 ):
     """
@@ -352,7 +314,6 @@ def process_video_task(
     start_time = time.time()
     frame_idx = 0
 
-    # Process EVERY SINGLE FRAME (100% frame-by-frame)
     while True:
         ret, frame_bgr = cap.read()
         if not ret:
