@@ -343,3 +343,5 @@ def process_animation_sprites(
         "num_frames": num_frames,
         "target_size": target_size
     }
+
+process_video_task = process_animation_sprites
