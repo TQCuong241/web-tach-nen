@@ -31,9 +31,9 @@ if hasattr(sys.stdout, 'reconfigure'):
     except Exception:
         pass
 
-from video_engine import process_video_task, process_video_frames_test, VideoMattingEngine, parse_hex_color
+from video_engine import process_video_task, process_animation_sprites, VideoMattingEngine, parse_hex_color
 
-app = FastAPI(title="Professional Video & Image Background Removal Studio")
+app = FastAPI(title="Professional Game Asset & Animation Sprite Sheet Studio")
 
 # Enable CORS
 app.add_middleware(
@@ -154,37 +154,15 @@ async def upload_video(file: UploadFile = File(...)):
         "thumb_url": f"/api/media/{thumb_filename}" if os.path.exists(thumb_path) else None
     }
 
-@app.post("/api/upload-bg")
-async def upload_bg_image(file: UploadFile = File(...)):
-    """Upload custom background image."""
-    allowed_exts = ('.png', '.jpg', '.jpeg', '.webp', '.bmp')
-    ext = os.path.splitext(file.filename)[1].lower()
-    if ext not in allowed_exts:
-        raise HTTPException(status_code=400, detail="Invalid image format.")
-
-    bg_id = f"bg_{uuid.uuid4().hex[:10]}"
-    saved_filename = f"{bg_id}{ext}"
-    saved_path = os.path.join(UPLOAD_DIR, saved_filename)
-
-    with open(saved_path, "wb") as buffer:
-        content = await file.read()
-        buffer.write(content)
-
-    return {
-        "bg_id": bg_id,
-        "bg_filename": saved_filename,
-        "bg_url": f"/api/media/{saved_filename}"
-    }
-
-@app.post("/api/process-test-10")
-async def start_10_frames_test(
+@app.post("/api/process-animation")
+async def start_animation_processing(
     file_id: str = Form(...),
-    num_frames: int = Form(10),
-    target_size: int = Form(1000),
-    upscale_factor: float = Form(3.0),
+    num_frames: int = Form(32),
+    target_size: int = Form(256),
+    upscale_factor: float = Form(2.0),
     model_name: str = Form("max")
 ):
-    """Process 10-frame extraction & matting test with live console logs from main copy.py."""
+    """Process Animation Sprite Sheet Generation task."""
     video_path = None
     for f in os.listdir(UPLOAD_DIR):
         if f.startswith(file_id) and not f.endswith("_thumb.jpg"):
@@ -194,7 +172,7 @@ async def start_10_frames_test(
     if not video_path or not os.path.exists(video_path):
         raise HTTPException(status_code=404, detail="Video file not found.")
 
-    task_id = f"task_test_{uuid.uuid4().hex[:10]}"
+    task_id = f"anim_{uuid.uuid4().hex[:10]}"
     tasks_progress[task_id] = {
         "status": "queued",
         "percent": 0,
@@ -220,10 +198,10 @@ async def start_10_frames_test(
                         pass
 
         try:
-            res = process_video_frames_test(
+            res = process_animation_sprites(
                 video_path=video_path,
                 output_dir=OUTPUT_DIR,
-                num_frames_to_extract=num_frames,
+                num_frames=num_frames,
                 target_size=target_size,
                 upscale_factor=upscale_factor,
                 engine_type=model_name,
@@ -232,138 +210,12 @@ async def start_10_frames_test(
             tasks_progress[task_id]["status"] = "completed"
             tasks_progress[task_id]["percent"] = 100
             tasks_progress[task_id]["extracted_images"] = [f"/api/media-output/{f}" for f in res["extracted_files"]]
+            tasks_progress[task_id]["spritesheet_url"] = res["spritesheet_url"]
+            tasks_progress[task_id]["spritesheet_name"] = res["spritesheet_name"]
+            tasks_progress[task_id]["gif_url"] = res["gif_url"]
             tasks_progress[task_id]["download_url"] = f"/api/download/{res['zip_file']}"
         except Exception as e:
-            print(f"[Test Worker Error] {e}")
-            tasks_progress[task_id]["status"] = "failed"
-            tasks_progress[task_id]["error"] = str(e)
-
-    thread = threading.Thread(target=run_worker, daemon=True)
-    thread.start()
-
-    return {"task_id": task_id, "status": "started"}
-
-@app.post("/api/process-image")
-async def process_single_image_endpoint(
-    file_id: str = Form(...),
-    bg_type: str = Form("transparent"),
-    bg_color: str = Form("#00FF00"),
-    upscale_factor: float = Form(1.0),
-    model_name: str = Form("max")
-):
-    """Process single image background matting (IS-Net High Precision DIS)."""
-    image_path = None
-    for f in os.listdir(UPLOAD_DIR):
-        if f.startswith(file_id):
-            image_path = os.path.join(UPLOAD_DIR, f)
-            break
-
-    if not image_path or not os.path.exists(image_path):
-        raise HTTPException(status_code=404, detail="Image file not found.")
-
-    engine = VideoMattingEngine(model_name=model_name, engine_type=model_name)
-    
-    try:
-        pil_img = Image.open(image_path)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Could not open image: {e}")
-
-    no_bg_rgba = engine.process_frame(np.array(pil_img.convert('RGB'))[:, :, ::-1])
-    
-    output_filename = f"{file_id}_nobg.png"
-    output_path = os.path.join(OUTPUT_DIR, output_filename)
-    
-    pil_out = Image.fromarray(no_bg_rgba)
-    if upscale_factor > 1.0:
-        new_w = int(pil_out.width * upscale_factor)
-        new_h = int(pil_out.height * upscale_factor)
-        pil_out = pil_out.resize((new_w, new_h), Image.Resampling.LANCZOS)
-
-    pil_out.save(output_path, "PNG", optimize=True)
-
-    return {
-        "status": "completed",
-        "output_media_url": f"/api/media-output/{output_filename}",
-        "download_url": f"/api/download/{output_filename}",
-        "output_filename": output_filename
-    }
-
-@app.post("/api/process")
-async def start_processing(
-    file_id: str = Form(...),
-    bg_type: str = Form("greenscreen"),
-    bg_color: str = Form("#00FF00"),
-    bg_image_id: str = Form(None),
-    blur_radius: int = Form(15),
-    output_format: str = Form("mp4"),
-    downsample_ratio: float = Form(1.0),
-    model_name: str = Form("max"),
-    upscale_factor: float = Form(1.0),
-    target_size: int = Form(0)
-):
-    """Start background removal processing task."""
-    video_path = None
-    for f in os.listdir(UPLOAD_DIR):
-        if f.startswith(file_id) and not f.endswith("_thumb.jpg"):
-            video_path = os.path.join(UPLOAD_DIR, f)
-            break
-
-    if not video_path or not os.path.exists(video_path):
-        raise HTTPException(status_code=404, detail="Video file not found. Please upload video first.")
-
-    bg_image_path = None
-    if bg_image_id:
-        for f in os.listdir(UPLOAD_DIR):
-            if f.startswith(bg_image_id):
-                bg_image_path = os.path.join(UPLOAD_DIR, f)
-                break
-
-    task_id = f"task_{uuid.uuid4().hex[:10]}"
-    tasks_progress[task_id] = {
-        "status": "queued",
-        "percent": 0,
-        "current_frame": 0,
-        "total_frames": 0,
-        "fps": 0,
-        "eta_seconds": 0,
-        "output_file": None
-    }
-
-    def run_worker():
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-
-        def progress_cb(data):
-            tasks_progress[task_id].update(data)
-            if task_id in active_websockets:
-                for ws in active_websockets[task_id]:
-                    try:
-                        loop.run_until_complete(ws.send_json(tasks_progress[task_id]))
-                    except Exception:
-                        pass
-
-        try:
-            output_file = process_video_task(
-                video_path=video_path,
-                output_dir=OUTPUT_DIR,
-                bg_type=bg_type,
-                bg_color=bg_color,
-                bg_image_path=bg_image_path,
-                blur_radius=blur_radius,
-                output_format=output_format,
-                downsample_ratio=downsample_ratio,
-                model_name=model_name,
-                engine_type=model_name,
-                upscale_factor=upscale_factor,
-                target_size=target_size,
-                progress_callback=progress_cb
-            )
-            tasks_progress[task_id]["status"] = "completed"
-            tasks_progress[task_id]["percent"] = 100
-            tasks_progress[task_id]["download_url"] = f"/api/download/{os.path.basename(output_file)}"
-            tasks_progress[task_id]["output_media_url"] = f"/api/media-output/{os.path.basename(output_file)}"
-        except Exception as e:
-            print(f"[Worker Error] Task {task_id} failed: {e}")
+            print(f"[Animation Worker Error] {e}")
             tasks_progress[task_id]["status"] = "failed"
             tasks_progress[task_id]["error"] = str(e)
 
@@ -418,7 +270,7 @@ async def download_file(filename: str):
 if __name__ == "__main__":
     import uvicorn
     print("=" * 80)
-    print("  KHOI CHAY PROFESSIONAL VIDEO & IMAGE BACKGROUND REMOVER WEB STUDIO")
+    print("  KHOI CHAY PROFESSIONAL GAME ASSET ANIMATION & SPRITE SHEET STUDIO")
     print("  URL: http://localhost:8000")
     print("=" * 80)
     uvicorn.run("server:app", host="0.0.0.0", port=8000, reload=True)

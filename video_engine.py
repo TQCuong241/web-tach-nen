@@ -73,7 +73,6 @@ class SAM2ViTMattingEngine:
         if work_img.mode != 'RGBA':
             work_img = work_img.convert('RGBA')
 
-        # Thực hiện tách nền bằng IS-Net High Precision Model từ main copy.py
         no_bg_pil = self.remove(work_img, session=self.session)
 
         if upscale_factor > 1.0:
@@ -141,7 +140,7 @@ class RVMMattingEngine:
 
 class VideoMattingEngine:
     """
-    Unified AI Video Matting Engine supporting --Max (main copy.py IS-Net DIS) and --Min.
+    Unified AI Video Matting Engine supporting --Max (IS-Net DIS) and --Min (RVM).
     """
     def __init__(self, model_name="mobilenetv3", device=None, engine_type="max"):
         self.engine_type = engine_type.lower()
@@ -182,60 +181,54 @@ class VideoMattingEngine:
             alpha = cv2.bitwise_not(mask)
             return np.dstack([frame_rgb, alpha])
 
-    def render_composite(self, rgba_np, orig_bgr, bg_type='greenscreen', bg_color=(0, 255, 0), bg_image_np=None, blur_radius=15):
-        if cv2 is None or np is None:
-            return rgba_np
 
-        fg_rgb = rgba_np[:, :, :3]
-        alpha = rgba_np[:, :, 3].astype(np.float32) / 255.0
-        alpha_3d = np.dstack([alpha, alpha, alpha])
-        h, w = rgba_np.shape[:2]
+def create_sprite_sheet(frame_paths, target_size, output_path):
+    """
+    Tạo tệp Sprite Sheet PNG ma trận từ chuỗi N khung hình ảnh.
+    """
+    n = len(frame_paths)
+    if n == 0 or Image is None:
+        return None, 0, 0
 
-        if bg_type == 'transparent':
-            return rgba_np
+    cols = int(np.ceil(np.sqrt(n)))
+    rows = int(np.ceil(n / cols))
 
-        elif bg_type in ('greenscreen', 'bluescreen', 'color'):
-            color_rgb = (0, 255, 0) if bg_type == 'greenscreen' else ((0, 0, 255) if bg_type == 'bluescreen' else bg_color)
-            bg_rgb = np.full((h, w, 3), color_rgb, dtype=np.uint8)
-            composite_rgb = (fg_rgb * alpha_3d + bg_rgb * (1.0 - alpha_3d)).astype(np.uint8)
-            return cv2.cvtColor(composite_rgb, cv2.COLOR_RGB2BGR)
+    sheet_w = cols * target_size
+    sheet_h = rows * target_size
 
-        elif bg_type == 'image' and bg_image_np is not None:
-            bg_resized = cv2.resize(bg_image_np, (w, h), interpolation=cv2.INTER_AREA)
-            if bg_resized.shape[2] == 4:
-                bg_resized = bg_resized[:, :, :3]
-            bg_rgb = cv2.cvtColor(bg_resized, cv2.COLOR_BGR2RGB)
-            composite_rgb = (fg_rgb * alpha_3d + bg_rgb * (1.0 - alpha_3d)).astype(np.uint8)
-            return cv2.cvtColor(composite_rgb, cv2.COLOR_RGB2BGR)
+    sprite_sheet = Image.new("RGBA", (sheet_w, sheet_h), (0, 0, 0, 0))
+    for idx, fpath in enumerate(frame_paths):
+        r = idx // cols
+        c = idx % cols
+        if os.path.exists(fpath):
+            img = Image.open(fpath).convert("RGBA")
+            if img.size != (target_size, target_size):
+                img = img.resize((target_size, target_size), Image.Resampling.LANCZOS)
+            sprite_sheet.paste(img, (c * target_size, r * target_size))
+            img.close()
 
-        elif bg_type == 'blur':
-            ksize = blur_radius * 2 + 1
-            blurred_bgr = cv2.GaussianBlur(orig_bgr, (ksize, ksize), 0)
-            bg_rgb = cv2.cvtColor(blurred_bgr, cv2.COLOR_BGR2RGB)
-            composite_rgb = (fg_rgb * alpha_3d + bg_rgb * (1.0 - alpha_3d)).astype(np.uint8)
-            return cv2.cvtColor(composite_rgb, cv2.COLOR_RGB2BGR)
-
-        else:
-            bg_rgb = np.full((h, w, 3), (0, 255, 0), dtype=np.uint8)
-            composite_rgb = (fg_rgb * alpha_3d + bg_rgb * (1.0 - alpha_3d)).astype(np.uint8)
-            return cv2.cvtColor(composite_rgb, cv2.COLOR_RGB2BGR)
+    sprite_sheet.save(output_path, "PNG", optimize=True)
+    return output_path, cols, rows
 
 
-def process_video_frames_test(
+def process_animation_sprites(
     video_path: str,
     output_dir: str,
-    num_frames_to_extract: int = 10,
-    target_size: int = 1000,
-    upscale_factor: float = 3.0,
+    num_frames: int = 32,
+    target_size: int = 256,
+    upscale_factor: float = 2.0,
     engine_type: str = 'max',
     progress_callback = None
 ):
     """
-    TÁCH VÀ XUẤT 10 BỨC ẢNH TEST TỪ MAIN COPY.PY:
-    Phân tích video -> Trích xuất & Tách nền đúng num_frames_to_extract bức ảnh PNG trong suốt -> Xuất log từng frame!
+    TOOL TẠO ANIMATION & SPRITE SHEET TỪ VIDEO (GAME ASSET STUDIO):
+    1. Trích xuất đúng `num_frames` khung hình từ video.
+    2. Tách nền từng frame bằng IS-Net DIS High-Precision AI (`--Max`).
+    3. Căn khung vuông chuẩn `target_size x target_size` px.
+    4. Ghép toàn bộ chuỗi frame thành tệp Sprite Sheet Grid PNG + Bộ ảnh Zip + Ảnh GIF đếm FPS.
     """
     if cv2 is None or np is None:
-        raise RuntimeError("OpenCV is required for video frame processing.")
+        raise RuntimeError("OpenCV is required for Animation Sprite Sheet processing.")
 
     os.makedirs(output_dir, exist_ok=True)
     base_name = os.path.splitext(os.path.basename(video_path))[0]
@@ -245,22 +238,26 @@ def process_video_frames_test(
         raise ValueError(f"Could not open video file: {video_path}")
 
     frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    if fps <= 0 or np.isnan(fps):
+        fps = 30.0
+
     print("=" * 80)
-    print(f"Mo video thanh cong: {base_name}")
-    print(f"Tong so frame: {frame_count}")
-    print(f"Trich xuat & Tach nen {num_frames_to_extract} frame (AI Matting)...")
+    print(f"[Animation Studio] Video: {base_name} | Total Frames: {frame_count}")
+    print(f"[Animation Studio] Extracting {num_frames} frames @ {target_size}x{target_size}px (Upscale {upscale_factor}x)")
     print("=" * 80)
 
-    if num_frames_to_extract <= 1:
+    if num_frames <= 1:
         indices = [0]
     else:
-        indices = [int(i * (frame_count - 1) / (num_frames_to_extract - 1)) for i in range(num_frames_to_extract)]
+        indices = [int(i * (frame_count - 1) / (num_frames - 1)) for i in range(num_frames)]
 
     engine = VideoMattingEngine(model_name="isnet-general-use", engine_type=engine_type)
     engine.reset_rec_states()
 
-    extracted_files = []
+    extracted_frame_paths = []
     log_messages = []
+    frames_pil_gif = []
 
     start_time = time.time()
     for i, idx in enumerate(indices):
@@ -272,224 +269,77 @@ def process_video_frames_test(
         frame_start_time = time.time()
         rgba_np = engine.process_frame(frame, upscale_factor=upscale_factor)
 
-        # Căn vuông sprite nếu target_size > 0
-        if target_size > 0:
-            h_f, w_f, _ = rgba_np.shape
-            if w_f > h_f:
-                diff = w_f - h_f
-                top_pad, bottom_pad = diff // 2, diff - diff // 2
-                left_pad, right_pad = 0, 0
-            else:
-                diff = h_f - w_f
-                left_pad, right_pad = diff // 2, diff - diff // 2
-                top_pad, bottom_pad = 0, 0
+        # Căn vuông sprite chuẩn target_size x target_size
+        h_f, w_f, _ = rgba_np.shape
+        if w_f > h_f:
+            diff = w_f - h_f
+            top_pad, bottom_pad = diff // 2, diff - diff // 2
+            left_pad, right_pad = 0, 0
+        else:
+            diff = h_f - w_f
+            left_pad, right_pad = diff // 2, diff - diff // 2
+            top_pad, bottom_pad = 0, 0
 
-            padded = cv2.copyMakeBorder(rgba_np, top_pad, bottom_pad, left_pad, right_pad, cv2.BORDER_CONSTANT, value=(0, 0, 0, 0))
-            rgba_np = cv2.resize(padded, (target_size, target_size), interpolation=cv2.INTER_AREA)
+        padded = cv2.copyMakeBorder(rgba_np, top_pad, bottom_pad, left_pad, right_pad, cv2.BORDER_CONSTANT, value=(0, 0, 0, 0))
+        cropped_resized = cv2.resize(padded, (target_size, target_size), interpolation=cv2.INTER_AREA)
 
         output_name = f"frame_{i+1:03d}.png"
         output_path = os.path.join(output_dir, output_name)
 
-        out_pil = Image.fromarray(rgba_np)
+        out_pil = Image.fromarray(cropped_resized)
         out_pil.save(output_path, "PNG", optimize=True)
 
+        frames_pil_gif.append(out_pil)
+        extracted_frame_paths.append(output_path)
+
         elapsed = time.time() - frame_start_time
-        log_line = f"[{i+1}/{num_frames_to_extract}] Frame {idx} -> {output_name} ({elapsed:.2f}s)"
+        log_line = f"[{i+1}/{num_frames}] Frame {idx} -> {output_name} ({elapsed:.2f}s)"
         print(log_line)
         log_messages.append(log_line)
-        extracted_files.append(output_name)
 
         if progress_callback:
             progress_callback({
                 "status": "processing",
                 "current_frame": i + 1,
-                "total_frames": num_frames_to_extract,
-                "percent": int(((i + 1) / num_frames_to_extract) * 100),
+                "total_frames": num_frames,
+                "percent": int(((i + 1) / num_frames) * 100),
                 "log": log_line,
                 "fps": round(1.0 / elapsed, 1) if elapsed > 0 else 0.0
             })
 
     cap.release()
-    print("\nDA HOAN THANH TACH NEN 10 KHUNG HINH TEST!")
 
-    zip_filename = f"{base_name}_10_frames.zip"
+    # 1. Tạo tệp Ma trận Sprite Sheet Grid PNG
+    spritesheet_name = f"spritesheet_{base_name}_{num_frames}f_{target_size}px.png"
+    spritesheet_path = os.path.join(output_dir, spritesheet_name)
+    create_sprite_sheet(extracted_frame_paths, target_size, spritesheet_path)
+
+    # 2. Đóng gói ZIP chuỗi frames PNG
+    zip_filename = f"sprites_{base_name}_{num_frames}f.zip"
     zip_path = os.path.join(output_dir, zip_filename)
     with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
-        for fname in extracted_files:
-            zipf.write(os.path.join(output_dir, fname), arcname=fname)
+        for fpath in extracted_frame_paths:
+            zipf.write(fpath, arcname=os.path.basename(fpath))
+        if os.path.exists(spritesheet_path):
+            zipf.write(spritesheet_path, arcname=spritesheet_name)
+
+    # 3. Tạo GIF xem trước Animation
+    gif_name = f"anim_{base_name}.gif"
+    gif_path = os.path.join(output_dir, gif_name)
+    if frames_pil_gif:
+        duration_ms = int(1000.0 / 12.0)
+        frames_pil_gif[0].save(gif_path, save_all=True, append_images=frames_pil_gif[1:], optimize=True, duration=duration_ms, loop=0)
+
+    print("\nDA HOAN THANH TAO SPRITE SHEET & ANIMATION!")
 
     return {
         "output_dir": output_dir,
-        "extracted_files": extracted_files,
+        "extracted_files": [os.path.basename(p) for p in extracted_frame_paths],
+        "spritesheet_url": f"/api/media-output/{spritesheet_name}",
+        "spritesheet_name": spritesheet_name,
+        "gif_url": f"/api/media-output/{gif_name}",
         "zip_file": zip_filename,
-        "log_messages": log_messages
+        "log_messages": log_messages,
+        "num_frames": num_frames,
+        "target_size": target_size
     }
-
-
-def process_video_task(
-    video_path: str,
-    output_dir: str,
-    bg_type: str = 'greenscreen',
-    bg_color: str = '#00FF00',
-    bg_image_path: str = None,
-    blur_radius: int = 15,
-    output_format: str = 'mp4',
-    downsample_ratio: float = 1.0,
-    model_name: str = 'max',
-    engine_type: str = 'max',
-    upscale_factor: float = 1.0,
-    target_size: int = 0,
-    progress_callback = None
-):
-    if cv2 is None or np is None:
-        raise RuntimeError("OpenCV is required for video file processing.")
-
-    os.makedirs(output_dir, exist_ok=True)
-    base_name = os.path.splitext(os.path.basename(video_path))[0]
-
-    cap = cv2.VideoCapture(video_path)
-    if not cap.isOpened():
-        raise ValueError(f"Could not open video file: {video_path}")
-
-    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-    fps = cap.get(cv2.CAP_PROP_FPS)
-    if fps <= 0 or np.isnan(fps):
-        fps = 30.0
-    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-
-    print("=" * 80)
-    print(f"[Process Video Task] Input: {base_name}")
-    print(f"[Process Video Task] Total Frames: {total_frames} | FPS: {fps:.2f} | Target Duration: {total_frames/fps:.2f}s")
-    print("=" * 80)
-
-    engine = VideoMattingEngine(model_name=model_name, engine_type=engine_type)
-    engine.reset_rec_states()
-
-    rgb_color = parse_hex_color(bg_color)
-    bg_image_np = cv2.imread(bg_image_path) if (bg_type == 'image' and bg_image_path and os.path.exists(bg_image_path)) else None
-
-    audio_path = os.path.join(output_dir, "temp_audio.aac")
-    has_audio = extract_audio(video_path, audio_path)
-
-    temp_video_out = os.path.join(output_dir, f"temp_processed.{'webm' if output_format == 'webm' else 'mp4'}")
-    final_output_path = os.path.join(output_dir, f"{base_name}_nobg.{output_format if output_format != 'zip_png' else 'zip'}")
-
-    out_w, out_h = (target_size, target_size) if target_size > 0 else (width, height)
-
-    writer = None
-    frames_gif = []
-    png_dir = os.path.join(output_dir, "png_frames") if output_format == 'zip_png' else None
-    if png_dir:
-        os.makedirs(png_dir, exist_ok=True)
-
-    if output_format == 'webm' and bg_type == 'transparent':
-        fourcc = cv2.VideoWriter_fourcc(*'VP90')
-        writer = cv2.VideoWriter(temp_video_out, fourcc, fps, (out_w, out_h), isColor=True)
-        if not writer.isOpened():
-            fourcc = cv2.VideoWriter_fourcc(*'VP80')
-            writer = cv2.VideoWriter(temp_video_out, fourcc, fps, (out_w, out_h), isColor=True)
-    elif output_format != 'gif' and output_format != 'zip_png':
-        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-        writer = cv2.VideoWriter(temp_video_out, fourcc, fps, (out_w, out_h))
-
-    start_time = time.time()
-    frame_idx = 0
-
-    while True:
-        ret, frame_bgr = cap.read()
-        if not ret:
-            break
-        frame_idx += 1
-
-        frame_start = time.time()
-        rgba_np = engine.process_frame(frame_bgr, downsample_ratio=downsample_ratio, upscale_factor=upscale_factor)
-
-        if target_size > 0:
-            h_f, w_f, _ = rgba_np.shape
-            if w_f > h_f:
-                diff = w_f - h_f
-                top_pad, bottom_pad = diff // 2, diff - diff // 2
-                left_pad, right_pad = 0, 0
-            else:
-                diff = h_f - w_f
-                left_pad, right_pad = diff // 2, diff - diff // 2
-                top_pad, bottom_pad = 0, 0
-
-            padded = cv2.copyMakeBorder(rgba_np, top_pad, bottom_pad, left_pad, right_pad, cv2.BORDER_CONSTANT, value=(0, 0, 0, 0))
-            rgba_np = cv2.resize(padded, (target_size, target_size), interpolation=cv2.INTER_AREA)
-
-        if output_format == 'zip_png':
-            pil_rgba = Image.fromarray(rgba_np)
-            frame_name = f"frame_{frame_idx:05d}.png"
-            pil_rgba.save(os.path.join(png_dir, frame_name), "PNG", optimize=True)
-
-        elif output_format == 'gif':
-            composite_bgr = engine.render_composite(rgba_np, frame_bgr, bg_type, rgb_color, bg_image_np, blur_radius)
-            composite_rgb = cv2.cvtColor(composite_bgr, cv2.COLOR_BGR2RGB)
-            pil_frame = Image.fromarray(composite_rgb)
-            if out_w > 640:
-                new_h = int(out_h * (640.0 / out_w))
-                pil_frame = pil_frame.resize((640, new_h), Image.Resampling.LANCZOS)
-            frames_gif.append(pil_frame)
-
-        else:
-            effective_bg = bg_type if bg_type != 'transparent' else 'greenscreen'
-            composite_bgr = engine.render_composite(rgba_np, frame_bgr, effective_bg, rgb_color, bg_image_np, blur_radius)
-            if writer and writer.isOpened():
-                writer.write(composite_bgr)
-
-        elapsed = time.time() - start_time
-        frame_elapsed = time.time() - frame_start
-        current_fps = frame_idx / elapsed if elapsed > 0 else 0.0
-        percent = int((frame_idx / total_frames) * 100) if total_frames > 0 else 0
-
-        log_line = f"[{frame_idx}/{total_frames}] Frame {frame_idx-1} -> Processed ({frame_elapsed:.2f}s)"
-        print(log_line)
-
-        if progress_callback:
-            progress_callback({
-                "status": "processing",
-                "current_frame": frame_idx,
-                "total_frames": total_frames,
-                "percent": percent,
-                "fps": round(current_fps, 1),
-                "eta_seconds": int((total_frames - frame_idx) / current_fps) if current_fps > 0 else 0,
-                "log": log_line
-            })
-
-    cap.release()
-    if writer:
-        writer.release()
-
-    if output_format == 'zip_png' and png_dir:
-        with zipfile.ZipFile(final_output_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
-            for root, _, files in os.walk(png_dir):
-                for f in files:
-                    zipf.write(os.path.join(root, f), arcname=f)
-        shutil.rmtree(png_dir, ignore_errors=True)
-
-    elif output_format == 'gif' and frames_gif:
-        duration_ms = int(1000.0 / fps)
-        frames_gif[0].save(final_output_path, save_all=True, append_images=frames_gif[1:], optimize=True, duration=duration_ms, loop=0)
-
-    elif os.path.exists(temp_video_out):
-        if has_audio and os.path.exists(audio_path):
-            merge_audio(temp_video_out, audio_path, final_output_path)
-            if os.path.exists(temp_video_out):
-                os.remove(temp_video_out)
-        else:
-            shutil.move(temp_video_out, final_output_path)
-
-    if os.path.exists(audio_path):
-        os.remove(audio_path)
-
-    if progress_callback:
-        progress_callback({
-            "status": "completed",
-            "percent": 100,
-            "output_file": os.path.basename(final_output_path),
-            "output_path": final_output_path
-        })
-
-    return final_output_path

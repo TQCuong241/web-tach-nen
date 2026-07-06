@@ -3,38 +3,30 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CyberMatte AI - Studio Tách Nền Video Chuyên Nghiệp VIP</title>
-    <meta name="description" content="Công cụ tách nền video AI chuyên nghiệp tự động, xuất file màn xanh Green Screen MP4, WebM trong suốt, hoặc thay hình nền cực mượt. Hỗ trợ Vercel.com.">
-    <!-- Google Fonts -->
+    <title>CyberMatte AI - Tool Tạo Animation & Sprite Sheet Game Asset Studio</title>
+    <meta name="description" content="Studio bóc tách nền video chuyên nghiệp, trích xuất chuỗi ảnh animation và tạo ma trận Sprite Sheet Game Asset bằng AI IS-Net & RVM.">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;600;700;800&display=swap" rel="stylesheet">
-    <!-- FontAwesome Icons -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <!-- MediaPipe AI Web Dependencies for Client-Side Vercel Mode -->
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/selfie_segmentation.js" crossorigin="anonymous"></script>
-    <!-- Custom Style -->
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/static/css/style.css">
 </head>
 <body>
-
     <div class="app-container">
-        <!-- HEADER -->
-        <header class="header">
-            <div class="logo-group">
+        <!-- HEADER TOPBAR -->
+        <header class="topbar">
+            <div class="logo">
                 <div class="logo-icon">
-                    <i class="fa-solid fa-wand-magic-sparkles"></i>
+                    <i class="fa-solid fa-gamepad"></i>
                 </div>
                 <div class="logo-text">
-                    <h1>CYBER<span>MATTE</span> AI</h1>
-                    <span class="tagline">Studio Tách Nền Video Chuyên Nghiệp (Vercel Ready)</span>
+                    <span class="brand">CYBERMATTE</span>
+                    <span class="tag">ANIMATION STUDIO</span>
                 </div>
             </div>
             <div class="header-badges">
-                <div class="status-badge" id="engineStatusBadge">
-                    <span class="pulse-dot"></span> AI Engine: Frame Matting & RVM v2
-                </div>
+                <span class="badge badge-glow"><i class="fa-solid fa-wand-magic-sparkles"></i> AI Sprite Sheet Engine</span>
+                <span class="badge badge-secondary"><i class="fa-solid fa-cubes"></i> 2.5D Game Assets</span>
             </div>
         </header>
 
@@ -44,18 +36,18 @@
             <!-- HERO & UPLOAD SECTION -->
             <section class="section-card upload-section" id="uploadCard">
                 <div class="card-header">
-                    <h2><i class="fa-solid fa-cloud-arrow-up"></i> Tải Video / Ảnh Đầu Vào</h2>
-                    <p class="sub-text">Bóc tách nền tự động chất lượng cao VIP, hỗ trợ Video (MP4, MOV, WEBM) và Ảnh Tĩnh (PNG, JPG, WEBP).</p>
+                    <h2><i class="fa-solid fa-cloud-arrow-up"></i> Tải Video Animation / Sprite Đầu Vào</h2>
+                    <p class="sub-text">Tự động phân tích video, bóc tách nền sắc nét 100% bằng AI và tạo ma trận Sprite Sheet Game Asset.</p>
                 </div>
 
                 <div class="dropzone" id="dropzone">
-                    <input type="file" id="videoInput" accept="video/mp4,video/quicktime,video/webm,video/x-msvideo,video/x-matroska,image/png,image/jpeg,image/webp,image/bmp" hidden>
+                    <input type="file" id="videoInput" accept="video/mp4,video/quicktime,video/webm,video/x-msvideo,video/x-matroska,image/png,image/jpeg,image/webp" hidden>
                     <div class="dropzone-content" id="dropzoneContent">
                         <div class="dropzone-icon">
-                            <i class="fa-solid fa-photo-film"></i>
+                            <i class="fa-solid fa-film"></i>
                         </div>
-                        <h3>Kéo thả Video hoặc Ảnh vào đây để <span>Bóc Tách Nền</span></h3>
-                        <p class="dropzone-hint">Hỗ trợ MP4, MOV, WEBM, PNG, JPG, WEBP (Bóc tách chuẩn sắc nét VIP)</p>
+                        <h3>Kéo thả Video Animation vào đây để <span>Tạo Sprite Sheet</span></h3>
+                        <p class="dropzone-hint">Hỗ trợ MP4, MOV, WEBM, AVI (Bóc tách chuẩn sắc nét Game Asset VIP)</p>
                     </div>
                 </div>
 
@@ -67,7 +59,7 @@
                         <button class="remove-video-btn" id="removeVideoBtn" title="Hủy chọn video"><i class="fa-solid fa-xmark"></i></button>
                     </div>
                     <div class="video-details">
-                        <h4 id="videoFileName" class="file-name">my_video.mp4</h4>
+                        <h4 id="videoFileName" class="file-name">my_animation.mp4</h4>
                         <div class="meta-grid">
                             <div class="meta-item">
                                 <span class="meta-label">Độ phân giải</span>
@@ -82,7 +74,7 @@
                                 <span class="meta-val" id="metaDuration">00:12s</span>
                             </div>
                             <div class="meta-item">
-                                <span class="meta-label">Tổng Frames</span>
+                                <span class="meta-label">Tổng Frames Gốc</span>
                                 <span class="meta-val" id="metaFrames">720 frames</span>
                             </div>
                             <div class="meta-item">
@@ -95,147 +87,66 @@
             </section>
 
 
-            <!-- STUDIO CONTROLS (BACKGROUND & MODEL) -->
+            <!-- STUDIO CONTROLS (ANIMATION & SPRITE SETTINGS) -->
             <section class="section-card controls-section disabled-state" id="controlsCard">
                 <div class="card-header">
-                    <h2><i class="fa-solid fa-sliders"></i> Tùy Chọn Phông Nền & Mô Hình AI</h2>
-                    <p class="sub-text">Tùy chỉnh chế độ xuất màn xanh, nền trong suốt hoặc ảnh nền cá nhân.</p>
+                    <h2><i class="fa-solid fa-sliders"></i> Tùy Chỉnh Thông Số Sprite Sheet & Animation</h2>
+                    <p class="sub-text">Cấu hình số khung hình bóc tách, kích thước căn vuông tile và hệ số phóng to sắc nét.</p>
                 </div>
 
-                <!-- BACKGROUND TYPE TABS -->
-                <div class="control-group">
-                    <label class="control-label"><i class="fa-solid fa-layer-group"></i> Chế Độ Phông Nền:</label>
-                    <div class="bg-mode-grid">
-                        <button class="bg-mode-btn active" data-mode="greenscreen">
-                            <div class="mode-preview green-screen-preview"></div>
-                            <span>Màn Xanh (Green Screen)</span>
-                        </button>
-                        <button class="bg-mode-btn" data-mode="bluescreen">
-                            <div class="mode-preview blue-screen-preview"></div>
-                            <span>Màn Xanh Dương</span>
-                        </button>
-                        <button class="bg-mode-btn" data-mode="transparent">
-                            <div class="mode-preview transparent-preview"></div>
-                            <span>Trong Suốt (Alpha)</span>
-                        </button>
-                        <button class="bg-mode-btn" data-mode="color">
-                            <div class="mode-preview color-preview" id="colorModePreview"></div>
-                            <span>Màu Tùy Chọn</span>
-                        </button>
-                        <button class="bg-mode-btn" data-mode="image">
-                            <div class="mode-preview image-preview"><i class="fa-regular fa-image"></i></div>
-                            <span>Thay Ảnh Nền</span>
-                        </button>
-                        <button class="bg-mode-btn" data-mode="blur">
-                            <div class="mode-preview blur-preview"><i class="fa-solid fa-eye-slash"></i></div>
-                            <span>Làm Mờ Nền Gốc</span>
-                        </button>
-                    </div>
-                </div>
-
-                <!-- DYNAMIC OPTIONS ACCORDINGS TO MODE -->
-                <!-- Color picker options -->
-                <div class="sub-option-box hidden" id="colorPickerBox">
-                    <div class="color-picker-row">
-                        <label>Chọn màu phông nền:</label>
-                        <input type="color" id="bgColorInput" value="#00FF00">
-                        <div class="preset-colors">
-                            <button class="color-preset" style="background: #00FF00" data-color="#00FF00" title="Green Screen"></button>
-                            <button class="color-preset" style="background: #0000FF" data-color="#0000FF" title="Blue Screen"></button>
-                            <button class="color-preset" style="background: #FFFFFF" data-color="#FFFFFF" title="Studio White"></button>
-                            <button class="color-preset" style="background: #0A0E17" data-color="#0A0E17" title="Dark Slate"></button>
-                            <button class="color-preset" style="background: #FF0055" data-color="#FF0055" title="Neon Red"></button>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Custom Image Upload options -->
-                <div class="sub-option-box hidden" id="imageUploadBox">
-                    <label>Tải ảnh nền mới lên:</label>
-                    <div class="bg-image-upload">
-                        <input type="file" id="bgImageInput" accept="image/*" hidden>
-                        <button type="button" class="btn btn-secondary" id="bgImageBtn">
-                            <i class="fa-solid fa-image"></i> Chọn Ảnh Nền Tùy Chỉnh
-                        </button>
-                        <span id="bgImageName" class="file-hint">Chưa chọn ảnh</span>
-                    </div>
-                </div>
-
-                <!-- Blur options -->
-                <div class="sub-option-box hidden" id="blurOptionsBox">
-                    <div class="slider-row">
-                        <label>Cường độ mờ nền: <span id="blurValDisplay">15px</span></label>
-                        <input type="range" id="blurRadiusInput" min="3" max="45" step="2" value="15">
-                    </div>
-                </div>
-
-                <!-- ADVANCED SETTINGS (MODEL & FORMAT) -->
                 <div class="settings-grid">
                     <div class="setting-item">
-                        <label><i class="fa-solid fa-robot"></i> Mô hình AI Engine:</label>
-                        <select id="modelSelect" class="form-select">
-                            <option value="max" selected>👑 VIP --Max (IS-Net DIS High-Precision + Smart Hole Repair)</option>
-                            <option value="min">⚡ VIP --Min (Robust Video Matting - Flicker Free)</option>
-                            <option value="auto">✨ Browser Client Mode (Vercel / MediaPipe Web)</option>
+                        <label><i class="fa-solid fa-film"></i> Số Khung Hình Trích Xuất (Frames):</label>
+                        <select id="numFramesSelect" class="form-select">
+                            <option value="16">16 Frames (Tối ưu nhẹ cho Game Mobile)</option>
+                            <option value="24">24 Frames (Tốc độ tiêu chuẩn 24 FPS)</option>
+                            <option value="32" selected>32 Frames (Chuẩn Mượt Mới - Khuyên dùng)</option>
+                            <option value="48">48 Frames (Mượt mà chất lượng cao)</option>
+                            <option value="96">96 Frames (Siêu chi tiết 96 Frames Sprite)</option>
                         </select>
                     </div>
 
                     <div class="setting-item">
-                        <label><i class="fa-solid fa-file-export"></i> Định dạng Xuất File:</label>
-                        <select id="outputFormatSelect" class="form-select">
-                            <option value="mp4" selected>🎬 Video MP4 (Khuyên dùng cho CapCut, Premiere)</option>
-                            <option value="webm">🌐 Video WebM (Nền Trong Suốt Alpha)</option>
-                            <option value="zip_png">📦 Chuỗi Ảnh PNG Sequence (.ZIP)</option>
-                            <option value="gif">🎞️ Ảnh Động GIF Trong Suốt</option>
-                        </select>
-                    </div>
-
-                    <div class="setting-item">
-                        <label><i class="fa-solid fa-gauge-high"></i> Tỉ Lệ Xử Lý AI:</label>
-                        <select id="downsampleSelect" class="form-select">
-                            <option value="1.0" selected>🎯 100% Độ Phân Giải Gốc</option>
-                            <option value="0.75">⚡ 75% Tốc Độ Nhanh</option>
-                            <option value="0.5">🚀 50% Tốc Độ Siêu Nhanh</option>
-                        </select>
-                    </div>
-
-                    <div class="setting-item">
-                        <label><i class="fa-solid fa-up-right-and-down-left-from-center"></i> Upscale Siêu Sắc Nét (Nâng Cấp VIP):</label>
-                        <select id="upscaleSelect" class="form-select">
-                            <option value="1.0" selected>1.0x (Kích Thước Gốc)</option>
-                            <option value="2.0">✨ 2.0x Upscale LANCZOS (Phóng to 2 lần)</option>
-                            <option value="3.0">💎 3.0x Upscale LANCZOS (Phóng to 3 lần)</option>
-                        </select>
-                    </div>
-
-                    <div class="setting-item">
-                        <label><i class="fa-solid fa-vector-square"></i> Căn Khung Vuông Sprite Game:</label>
+                        <label><i class="fa-solid fa-vector-square"></i> Kích Thước Khung Vuông Tile (px):</label>
                         <select id="targetSizeSelect" class="form-select">
-                            <option value="0" selected>Tự Động (Kích thước gốc video)</option>
-                            <option value="256">256 x 256 px (Chuẩn Sprite 256)</option>
-                            <option value="512">512 x 512 px (Chuẩn Sprite 512)</option>
-                            <option value="1000">1000 x 1000 px (Chuẩn High Quality 1000)</option>
+                            <option value="256" selected>256 x 256 px (Chuẩn Sprite Sheet Game 2D/2.5D)</option>
+                            <option value="512">512 x 512 px (Chuẩn HD Game Asset 512)</option>
+                            <option value="1000">1000 x 1000 px (Chuẩn Super HD 1000)</option>
+                        </select>
+                    </div>
+
+                    <div class="setting-item">
+                        <label><i class="fa-solid fa-up-right-and-down-left-from-center"></i> Hệ Số Upscale (Phóng To LANCZOS):</label>
+                        <select id="upscaleSelect" class="form-select">
+                            <option value="1.0">1.0x (Kích Thước Gốc)</option>
+                            <option value="2.0" selected>✨ 2.0x Upscale LANCZOS (Khuyên Dùng VIP)</option>
+                            <option value="3.0">💎 3.0x Upscale LANCZOS (Siêu Nét 3 Lần)</option>
+                        </select>
+                    </div>
+
+                    <div class="setting-item">
+                        <label><i class="fa-solid fa-robot"></i> Mô Hình AI Matting:</label>
+                        <select id="modelSelect" class="form-select">
+                            <option value="max" selected>👑 VIP --Max (IS-Net DIS High-Precision)</option>
+                            <option value="min">⚡ VIP --Min (Robust Video Matting)</option>
                         </select>
                     </div>
                 </div>
 
-                <!-- ACTION BUTTONS -->
-                <div class="action-row" style="display: flex; gap: 15px; flex-wrap: wrap;">
-                    <button class="btn btn-primary btn-glow" id="startProcessBtn" disabled style="flex: 1;">
-                        <i class="fa-solid fa-play"></i> BẮT ĐẦU TÁCH NỀN VIDEO (FULL)
-                    </button>
-                    <button class="btn btn-secondary btn-glow" id="startTest10Btn" disabled style="flex: 1; background: linear-gradient(135deg, #ec4899, #8b5cf6); color: white;">
-                        <i class="fa-solid fa-flask"></i> 🧪 TEST TÁCH 10 FRAME & XUẤT LOG
+                <!-- ACTION BUTTON -->
+                <div class="action-row">
+                    <button class="btn btn-primary btn-glow" id="startAnimBtn" disabled style="width: 100%; font-size: 16px; padding: 16px;">
+                        <i class="fa-solid fa-wand-magic-sparkles"></i> BẮT ĐẦU TẠO ANIMATION & SPRITE SHEET
                     </button>
                 </div>
             </section>
 
 
-            <!-- PROGRESS DASHBOARD (Hidden initially) -->
+            <!-- PROGRESS DASHBOARD -->
             <section class="section-card progress-section hidden" id="progressCard">
                 <div class="card-header">
-                    <h2><i class="fa-solid fa-spinner fa-spin"></i> Đang Tách Nền theo main copy.py</h2>
-                    <p class="sub-text">Hệ thống AI IS-Net DIS đang bóc tách từng khung hình frame-by-frame và ghi log chi tiết.</p>
+                    <h2><i class="fa-solid fa-spinner fa-spin"></i> Đang Bóc Tách Khung Hình & Tạo Animation</h2>
+                    <p class="sub-text">Hệ thống AI IS-Net DIS đang trích xuất từng frame và ghép ma trận Sprite Sheet.</p>
                 </div>
 
                 <div class="progress-container">
@@ -255,45 +166,56 @@
                             <span class="stat-title">Tốc Độ Xử Lý</span>
                             <span class="stat-value" id="fpsVal">0 FPS</span>
                         </div>
-                        <div class="stat-box">
-                            <span class="stat-title">Thời Gian Còn Lại</span>
-                            <span class="stat-value" id="etaVal">--:--</span>
-                        </div>
                     </div>
 
-                    <!-- REAL-TIME LOG CONSOLE TERMINAL -->
-                    <div class="terminal-box" id="terminalBox" style="margin-top: 20px; background: #030712; border: 1px solid #1f2937; border-radius: 8px; padding: 15px; font-family: monospace; color: #10b981; font-size: 13px; max-height: 200px; overflow-y: auto; text-align: left;">
-                        <div>[SYSTEM LOG] Sẵn sàng phân tích video và chạy IS-Net DIS Engine...</div>
+                    <!-- REAL-TIME LOG TERMINAL CONSOLE -->
+                    <div class="terminal-box" id="terminalBox" style="margin-top: 20px; background: #030712; border: 1px solid #1f2937; border-radius: 8px; padding: 15px; font-family: 'JetBrains Mono', monospace; color: #10b981; font-size: 13px; max-height: 180px; overflow-y: auto; text-align: left;">
+                        <div>[SYSTEM LOG] Sẵn sàng nạp mô hình AI Animation Engine...</div>
                     </div>
                 </div>
             </section>
 
 
-            <!-- RESULT COMPARISON & DOWNLOAD STUDIO (Hidden initially) -->
+            <!-- RESULT STUDIO (SPRITE ANIMATION PREVIEWER & SPRITE SHEET MATRIX) -->
             <section class="section-card result-section hidden" id="resultCard">
                 <div class="card-header">
-                    <h2><i class="fa-solid fa-circle-check" style="color: #00f2fe;"></i> Tách Nền Hoàn Tất!</h2>
-                    <p class="sub-text">Tải kết quả video về máy hoặc tiến hành tách nền video khác.</p>
+                    <h2><i class="fa-solid fa-circle-check" style="color: #00f2fe;"></i> Đã Tạo Animation & Sprite Sheet Thành Công!</h2>
+                    <p class="sub-text">Xem trước chuyển động Animation xem trước mượt mà hoặc tải về bộ tệp Game Asset.</p>
                 </div>
 
-                <!-- VIDEO / IMAGE PREVIEW CONTAINER -->
-                <div class="comparison-container">
-                    <div class="video-preview-wrapper" id="previewWrapper">
-                        <video id="resultVideo" controls autoplay loop muted class="result-video-player"></video>
+                <!-- INTERACTIVE ANIMATION FLIPBOOK PREVIEWER -->
+                <div class="anim-player-container" style="background: rgba(15, 23, 42, 0.8); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; padding: 20px; margin-bottom: 25px; text-align: center;">
+                    <h3 style="font-size: 15px; margin-bottom: 12px; color: #38bdf8;"><i class="fa-solid fa-play"></i> Trình Xem Trước Chuyển Động Animation (Interactive Flipbook Player)</h3>
+                    
+                    <div class="canvas-preview-holder" style="width: 280px; height: 280px; margin: 0 auto 15px auto; background: repeating-conic-gradient(#1e293b 0% 25%, #0f172a 0% 50%) 50% / 20px 20px; border-radius: 12px; display: flex; align-items: center; justify-content: center; border: 2px solid #334155;">
+                        <canvas id="animCanvas" width="256" height="256" style="max-width: 100%; max-height: 100%; object-fit: contain;"></canvas>
+                    </div>
+
+                    <div class="anim-controls" style="display: flex; align-items: center; justify-content: center; gap: 15px; flex-wrap: wrap;">
+                        <button class="btn btn-secondary" id="playPauseBtn" style="padding: 8px 16px;"><i class="fa-solid fa-pause"></i> Tạm Dừng</button>
+                        <div style="display: flex; align-items: center; gap: 10px; font-size: 13px; color: #94a3b8;">
+                            <span>Tốc độ (FPS):</span>
+                            <input type="range" id="fpsSlider" min="1" max="60" value="12" style="cursor: pointer;">
+                            <span id="fpsDisplay" style="color: #00f2fe; font-weight: 700;">12 FPS</span>
+                        </div>
                     </div>
                 </div>
 
-                <!-- 10-IMAGE FRAME GALLERY GRID -->
-                <div class="gallery-grid hidden" id="galleryGrid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 15px; margin-bottom: 25px; max-height: 450px; overflow-y: auto; padding: 15px; background: rgba(15, 23, 42, 0.6); border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.1);">
+                <!-- SPRITE SHEET MATRIX VIEW -->
+                <div class="spritesheet-preview-container" style="background: rgba(15, 23, 42, 0.6); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; padding: 20px; margin-bottom: 25px;">
+                    <h3 style="font-size: 15px; margin-bottom: 12px; color: #c084fc;"><i class="fa-solid fa-border-all"></i> Ma Trận Sprite Sheet PNG (Tệp dùng cho Unity / Unreal / Godot)</h3>
+                    <div style="max-height: 350px; overflow: auto; background: repeating-conic-gradient(#1e293b 0% 25%, #0f172a 0% 50%) 50% / 16px 16px; border-radius: 8px; padding: 10px; border: 1px solid #334155;">
+                        <img id="spritesheetImg" src="" alt="Sprite Sheet PNG Matrix" style="max-width: 100%; height: auto; display: block; margin: 0 auto;">
+                    </div>
                 </div>
 
                 <!-- DOWNLOAD & RESTART BUTTONS -->
-                <div class="result-actions">
-                    <a id="downloadBtn" href="#" download class="btn btn-success btn-glow">
-                        <i class="fa-solid fa-download"></i> TẢI VIDEO KẾT QUẢ VỀ MÁY
+                <div class="result-actions" style="display: flex; gap: 15px; flex-wrap: wrap;">
+                    <a id="downloadBtn" href="#" download class="btn btn-success btn-glow" style="flex: 1;">
+                        <i class="fa-solid fa-file-zipper"></i> TẢI BỘ SPRITE SHEET GAME ASSET (.ZIP)
                     </a>
-                    <button class="btn btn-secondary" id="restartBtn">
-                        <i class="fa-solid fa-rotate-right"></i> Tách Video Khác
+                    <button class="btn btn-secondary" id="restartBtn" style="padding: 12px 24px;">
+                        <i class="fa-solid fa-rotate-right"></i> Tạo Animation Khác
                     </button>
                 </div>
             </section>
@@ -302,11 +224,10 @@
 
         <!-- FOOTER -->
         <footer class="footer">
-            <p>© 2026 CYBERMATTE AI STUDIO. Vercel & Serverless Enabled.</p>
+            <p>© 2026 CYBERMATTE AI ANIMATION STUDIO. Game Asset & 2.5D Sprite Generator Engine.</p>
         </footer>
     </div>
 
-    <!-- Scripts -->
     <script src="/static/js/client_engine.js"></script>
     <script src="/static/js/app.js"></script>
 </body>
