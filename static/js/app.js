@@ -1,9 +1,9 @@
-// CYBERMATTE STUDIO - FRONTEND JS CONTROLLER (SERVER & VERCEL BROWSER HYBRID)
+// CYBERMATTE STUDIO - FRONTEND JS CONTROLLER (VIDEO & IMAGE HYBRID ENGINE)
 
 document.addEventListener('DOMContentLoaded', () => {
-    // State variables
     let currentFileId = null;
     let currentVideoFile = null;
+    let isImageFile = false;
     let currentBgImageId = null;
     let currentBgImageElement = null;
     let selectedBgMode = 'greenscreen';
@@ -83,13 +83,13 @@ document.addEventListener('DOMContentLoaded', () => {
     dropzone.addEventListener('drop', (e) => {
         const files = e.dataTransfer.files;
         if (files.length > 0) {
-            handleVideoUpload(files[0]);
+            handleFileUpload(files[0]);
         }
     });
 
     videoInput.addEventListener('change', (e) => {
         if (e.target.files.length > 0) {
-            handleVideoUpload(e.target.files[0]);
+            handleFileUpload(e.target.files[0]);
         }
     });
 
@@ -98,17 +98,25 @@ document.addEventListener('DOMContentLoaded', () => {
         resetVideoSelection();
     });
 
-    async function handleVideoUpload(file) {
+    async function handleFileUpload(file) {
         currentVideoFile = file;
-        const videoUrl = URL.createObjectURL(file);
-        sourceVideoElement.src = videoUrl;
+        const fileExt = file.name.split('.').pop().toLowerCase();
+        isImageFile = ['png', 'jpg', 'jpeg', 'webp', 'bmp', 'tiff'].includes(fileExt);
+
+        const fileUrl = URL.createObjectURL(file);
+        if (isImageFile) {
+            videoThumb.src = fileUrl;
+            videoThumb.style.display = 'block';
+        } else {
+            sourceVideoElement.src = fileUrl;
+        }
 
         const formData = new FormData();
         formData.append('file', file);
 
         dropzoneContent.innerHTML = `
             <div class="dropzone-icon"><i class="fa-solid fa-spinner fa-spin"></i></div>
-            <h3>Đang đọc thông tin video...</h3>
+            <h3>Đang đọc tập tin ${isImageFile ? 'ảnh' : 'video'}...</h3>
         `;
 
         let isServerAvailable = false;
@@ -117,24 +125,33 @@ document.addEventListener('DOMContentLoaded', () => {
             if (resp.ok) {
                 const data = await resp.json();
                 currentFileId = data.file_id;
-                renderMeta(data.filename, data.width, data.height, data.fps, data.duration, data.total_frames, data.size_mb, data.thumb_url);
+                renderMeta(data.filename, data.width, data.height, data.fps, data.duration, data.total_frames, data.size_mb, data.thumb_url || fileUrl);
                 isServerAvailable = true;
             }
         } catch (e) {
-            console.log("Server API not reachable, running Client-side local mode for Vercel.");
+            console.log("Server API not reachable, running Client-side mode.");
         }
 
         if (!isServerAvailable) {
-            sourceVideoElement.onloadedmetadata = () => {
-                const width = sourceVideoElement.videoWidth || 1280;
-                const height = sourceVideoElement.videoHeight || 720;
-                const duration = Math.round(sourceVideoElement.duration * 10) / 10 || 10.0;
-                const fps = 30;
-                const totalFrames = Math.floor(duration * fps);
-                const sizeMb = Math.round((file.size / (1024 * 1024)) * 10) / 10;
+            if (isImageFile) {
+                const img = new Image();
+                img.src = fileUrl;
+                img.onload = () => {
+                    const sizeMb = Math.round((file.size / (1024 * 1024)) * 10) / 10;
+                    renderMeta(file.name, img.width, img.height, 0, 0, 1, sizeMb, fileUrl);
+                };
+            } else {
+                sourceVideoElement.onloadedmetadata = () => {
+                    const width = sourceVideoElement.videoWidth || 1280;
+                    const height = sourceVideoElement.videoHeight || 720;
+                    const duration = Math.round(sourceVideoElement.duration * 10) / 10 || 10.0;
+                    const fps = 30;
+                    const totalFrames = Math.floor(duration * fps);
+                    const sizeMb = Math.round((file.size / (1024 * 1024)) * 10) / 10;
 
-                renderMeta(file.name, width, height, fps, duration, totalFrames, sizeMb, null);
-            };
+                    renderMeta(file.name, width, height, fps, duration, totalFrames, sizeMb, null);
+                };
+            }
         }
 
         dropzone.classList.add('hidden');
@@ -146,27 +163,27 @@ document.addEventListener('DOMContentLoaded', () => {
     function renderMeta(filename, width, height, fps, duration, totalFrames, sizeMb, thumbUrl) {
         videoFileName.textContent = filename;
         metaRes.textContent = `${width} x ${height}`;
-        metaFps.textContent = `${fps} FPS`;
-        metaDuration.textContent = `${duration}s`;
-        metaFrames.textContent = `${totalFrames} frames`;
+        metaFps.textContent = isImageFile ? 'Ảnh tĩnh' : `${fps} FPS`;
+        metaDuration.textContent = isImageFile ? '1 khung hình' : `${duration}s`;
+        metaFrames.textContent = isImageFile ? '1 frame' : `${totalFrames} frames`;
         metaSize.textContent = `${sizeMb} MB`;
         if (thumbUrl) {
             videoThumb.src = thumbUrl;
-        } else {
-            videoThumb.style.display = 'none';
+            videoThumb.style.display = 'block';
         }
     }
 
     function resetVideoSelection() {
         currentFileId = null;
         currentVideoFile = null;
+        isImageFile = false;
         videoInput.value = '';
         dropzone.classList.remove('hidden');
         videoInfoCard.classList.add('hidden');
         dropzoneContent.innerHTML = `
-            <div class="dropzone-icon"><i class="fa-solid fa-film"></i></div>
-            <h3>Kéo thả Video vào đây hoặc <span>Duyệt Tập Tin</span></h3>
-            <p class="dropzone-hint">Khuyên dùng video có chủ thể người hoặc vật thể chuyển động rõ nét</p>
+            <div class="dropzone-icon"><i class="fa-solid fa-photo-film"></i></div>
+            <h3>Kéo thả Video hoặc Ảnh vào đây để <span>Bóc Tách Nền</span></h3>
+            <p class="dropzone-hint">Hỗ trợ MP4, MOV, WEBM, PNG, JPG, WEBP (Bóc tách chuẩn sắc nét VIP)</p>
         `;
         controlsCard.classList.add('disabled-state');
         startProcessBtn.disabled = true;
@@ -254,41 +271,84 @@ document.addEventListener('DOMContentLoaded', () => {
             formData.append('downsample_ratio', downsampleSelect.value);
             formData.append('model_name', selectedModel);
 
-            try {
-                const resp = await fetch('/api/process', { method: 'POST', body: formData });
-                const data = await resp.json();
-                if (data.task_id) {
-                    connectWebSocket(data.task_id);
-                    return;
-                }
-            } catch (err) {
-                console.log("Python backend not responding, fallback to client-side browser matting...");
+            if (isImageFile) {
+                try {
+                    const resp = await fetch('/api/process-image', { method: 'POST', body: formData });
+                    const data = await resp.json();
+                    if (data.status === 'completed') {
+                        showResult(data);
+                        return;
+                    }
+                } catch (err) {}
+            } else {
+                try {
+                    const resp = await fetch('/api/process', { method: 'POST', body: formData });
+                    const data = await resp.json();
+                    if (data.task_id) {
+                        connectWebSocket(data.task_id);
+                        return;
+                    }
+                } catch (err) {}
             }
         }
 
-        // --- CLIENT-SIDE BROWSER FRAME PROCESSING (VERCEL MODE) ---
+        // --- CLIENT-SIDE BROWSER PROCESSING (VERCEL / CLIENT MODE) ---
         runClientSideProcessor();
     });
 
     async function runClientSideProcessor() {
         try {
-            const res = await window.clientVideoProcessor.processVideo({
-                videoElement: sourceVideoElement,
-                bgType: selectedBgMode,
-                bgColor: bgColorInput.value,
-                bgImageElement: currentBgImageElement,
-                blurRadius: parseInt(blurRadiusInput.value),
-                outputFormat: outputFormatSelect.value,
-                progressCallback: updateProgressUI
-            });
+            if (isImageFile) {
+                // Single Image Matting
+                const imgElement = new Image();
+                imgElement.src = URL.createObjectURL(currentVideoFile);
+                await new Promise(r => imgElement.onload = r);
 
-            showResult({
-                output_media_url: res.blobUrl,
-                download_url: res.blobUrl,
-                output_filename: `nobg_video.${res.extension}`
-            });
+                const dummyVideo = document.createElement('video');
+                dummyVideo.width = imgElement.width;
+                dummyVideo.height = imgElement.height;
+
+                // Create a temporary canvas representing the image
+                const canvas = document.createElement('canvas');
+                canvas.width = imgElement.width;
+                canvas.height = imgElement.height;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(imgElement, 0, 0);
+
+                const res = await window.clientVideoProcessor.processVideo({
+                    videoElement: dummyVideo,
+                    bgType: selectedBgMode,
+                    bgColor: bgColorInput.value,
+                    bgImageElement: currentBgImageElement,
+                    blurRadius: parseInt(blurRadiusInput.value),
+                    outputFormat: 'png',
+                    progressCallback: updateProgressUI
+                });
+
+                showResult({
+                    output_media_url: res.blobUrl,
+                    download_url: res.blobUrl,
+                    output_filename: `nobg_image.png`
+                });
+            } else {
+                const res = await window.clientVideoProcessor.processVideo({
+                    videoElement: sourceVideoElement,
+                    bgType: selectedBgMode,
+                    bgColor: bgColorInput.value,
+                    bgImageElement: currentBgImageElement,
+                    blurRadius: parseInt(blurRadiusInput.value),
+                    outputFormat: outputFormatSelect.value,
+                    progressCallback: updateProgressUI
+                });
+
+                showResult({
+                    output_media_url: res.blobUrl,
+                    download_url: res.blobUrl,
+                    output_filename: `nobg_video.${res.extension}`
+                });
+            }
         } catch (err) {
-            alert(`Lỗi xử lý frame trên trình duyệt: ${err.message}`);
+            alert(`Lỗi xử lý bóc tách: ${err.message}`);
             progressCard.classList.add('hidden');
             controlsCard.classList.remove('disabled-state');
             startProcessBtn.disabled = false;
@@ -309,7 +369,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 showResult(data);
             } else if (data.status === 'failed') {
                 websocket.close();
-                // Seamless automatic fallback to client-side browser processor on Vercel
                 runClientSideProcessor();
             }
         };
@@ -319,13 +378,15 @@ document.addEventListener('DOMContentLoaded', () => {
         const percent = data.percent || 0;
         progressBarFill.style.width = `${percent}%`;
         percentVal.textContent = `${percent}%`;
-        frameVal.textContent = `${data.current_frame || 0} / ${data.total_frames || 0}`;
-        fpsVal.textContent = `${data.fps || 0} FPS`;
+        frameVal.textContent = isImageFile ? '1 / 1 frame' : `${data.current_frame || 0} / ${data.total_frames || 0}`;
+        fpsVal.textContent = isImageFile ? 'Ảnh tĩnh' : `${data.fps || 0} FPS`;
 
-        if (data.eta_seconds !== undefined) {
+        if (data.eta_seconds !== undefined && !isImageFile) {
             const mins = Math.floor(data.eta_seconds / 60);
             const secs = data.eta_seconds % 60;
             etaVal.textContent = `${mins > 0 ? mins + 'm ' : ''}${secs}s`;
+        } else {
+            etaVal.textContent = '0s';
         }
     }
 
@@ -342,7 +403,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (data.download_url) {
             downloadBtn.href = data.download_url;
-            downloadBtn.setAttribute('download', data.output_filename || 'nobg_video.mp4');
+            downloadBtn.setAttribute('download', data.output_filename || 'nobg_result.png');
         }
     }
 

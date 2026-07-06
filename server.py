@@ -20,15 +20,20 @@ try:
 except ImportError:
     Image = None
 
+try:
+    import numpy as np
+except ImportError:
+    np = None
+
 if hasattr(sys.stdout, 'reconfigure'):
     try:
         sys.stdout.reconfigure(encoding='utf-8')
     except Exception:
         pass
 
-from video_engine import process_video_task
+from video_engine import process_video_task, VideoMattingEngine, parse_hex_color
 
-app = FastAPI(title="Professional Video Background Removal Studio")
+app = FastAPI(title="Professional Video & Image Background Removal Studio")
 
 # Enable CORS
 app.add_middleware(
@@ -84,13 +89,13 @@ async def serve_index():
 
 @app.post("/api/upload")
 async def upload_video(file: UploadFile = File(...)):
-    """Upload input video and return metadata."""
-    allowed_exts = ('.mp4', '.mov', '.avi', '.webm', '.mkv')
+    """Upload input video or image and return metadata."""
+    allowed_exts = ('.mp4', '.mov', '.avi', '.webm', '.mkv', '.png', '.jpg', '.jpeg', '.webp', '.bmp', '.tiff')
     ext = os.path.splitext(file.filename)[1].lower()
     if ext not in allowed_exts:
-        raise HTTPException(status_code=400, detail="Invalid video format. Supported: MP4, MOV, AVI, WEBM, MKV")
+        raise HTTPException(status_code=400, detail="Invalid file format.")
 
-    file_id = f"vid_{uuid.uuid4().hex[:10]}"
+    file_id = f"file_{uuid.uuid4().hex[:10]}"
     saved_filename = f"{file_id}{ext}"
     saved_path = os.path.join(UPLOAD_DIR, saved_filename)
 
@@ -98,11 +103,22 @@ async def upload_video(file: UploadFile = File(...)):
         content = await file.read()
         buffer.write(content)
 
+    is_image = ext in ('.png', '.jpg', '.jpeg', '.webp', '.bmp', '.tiff')
     width, height, fps, duration, total_frames = 1280, 720, 30.0, 10.0, 300
     thumb_filename = f"{file_id}_thumb.jpg"
     thumb_path = os.path.join(UPLOAD_DIR, thumb_filename)
 
-    if cv2 is not None:
+    if is_image and Image is not None:
+        try:
+            im = Image.open(saved_path)
+            width, height = im.size
+            duration, total_frames, fps = 0.0, 1, 0.0
+            im.thumbnail((320, 320))
+            im.convert('RGB').save(thumb_path, 'JPEG')
+        except Exception:
+            pass
+
+    elif not is_image and cv2 is not None:
         try:
             cap = cv2.VideoCapture(saved_path)
             if cap.isOpened():
@@ -127,6 +143,7 @@ async def upload_video(file: UploadFile = File(...)):
         "file_id": file_id,
         "filename": file.filename,
         "saved_filename": saved_filename,
+        "is_image": is_image,
         "width": width,
         "height": height,
         "fps": round(fps, 2),
@@ -157,6 +174,51 @@ async def upload_bg_image(file: UploadFile = File(...)):
         "bg_id": bg_id,
         "bg_filename": saved_filename,
         "bg_url": f"/api/media/{saved_filename}"
+    }
+
+@app.post("/api/process-image")
+async def process_single_image_endpoint(
+    file_id: str = Form(...),
+    bg_type: str = Form("transparent"),
+    bg_color: str = Form("#00FF00"),
+    upscale_factor: float = Form(1.0),
+    model_name: str = Form("max")
+):
+    """Process single image background matting (IS-Net High Precision DIS)."""
+    image_path = None
+    for f in os.listdir(UPLOAD_DIR):
+        if f.startswith(file_id):
+            image_path = os.path.join(UPLOAD_DIR, f)
+            break
+
+    if not image_path or not os.path.exists(image_path):
+        raise HTTPException(status_code=404, detail="Image file not found.")
+
+    engine = VideoMattingEngine(model_name=model_name, engine_type=model_name)
+    
+    try:
+        pil_img = Image.open(image_path)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Could not open image: {e}")
+
+    no_bg_rgba = engine.process_frame(np.array(pil_img.convert('RGB'))[:, :, ::-1])
+    
+    output_filename = f"{file_id}_nobg.png"
+    output_path = os.path.join(OUTPUT_DIR, output_filename)
+    
+    pil_out = Image.fromarray(no_bg_rgba)
+    if upscale_factor > 1.0:
+        new_w = int(pil_out.width * upscale_factor)
+        new_h = int(pil_out.height * upscale_factor)
+        pil_out = pil_out.resize((new_w, new_h), Image.Resampling.LANCZOS)
+
+    pil_out.save(output_path, "PNG", optimize=True)
+
+    return {
+        "status": "completed",
+        "output_media_url": f"/api/media-output/{output_filename}",
+        "download_url": f"/api/download/{output_filename}",
+        "output_filename": output_filename
     }
 
 @app.post("/api/process")
@@ -285,7 +347,7 @@ async def download_file(filename: str):
 if __name__ == "__main__":
     import uvicorn
     print("=" * 80)
-    print("  KHOI CHAY PROFESSIONAL VIDEO BACKGROUND REMOVER WEB STUDIO")
+    print("  KHOI CHAY PROFESSIONAL VIDEO & IMAGE BACKGROUND REMOVER WEB STUDIO")
     print("  URL: http://localhost:8000")
     print("=" * 80)
     uvicorn.run("server:app", host="0.0.0.0", port=8000, reload=True)
