@@ -3,20 +3,28 @@ import sys
 import uuid
 import asyncio
 import threading
+from typing import Dict, Any
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, WebSocket, WebSocketDisconnect, BackgroundTasks
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
+
+# Safe imports for optional heavy libraries
+try:
+    import cv2
+except ImportError:
+    cv2 = None
+
+try:
+    from PIL import Image
+except ImportError:
+    Image = None
 
 if hasattr(sys.stdout, 'reconfigure'):
     try:
         sys.stdout.reconfigure(encoding='utf-8')
     except Exception:
         pass
-
-from typing import Dict, Any
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException, WebSocket, WebSocketDisconnect, BackgroundTasks
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
-from fastapi.middleware.cors import CORSMiddleware
-import cv2
-from PIL import Image
 
 from video_engine import process_video_task
 
@@ -32,18 +40,31 @@ app.add_middleware(
 )
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-UPLOAD_DIR = os.path.join(BASE_DIR, "uploads")
-OUTPUT_DIR = os.path.join(BASE_DIR, "outputs")
+
+# On Vercel or read-only environments, use /tmp
+try:
+    UPLOAD_DIR = os.path.join(BASE_DIR, "uploads")
+    os.makedirs(UPLOAD_DIR, exist_ok=True)
+except Exception:
+    UPLOAD_DIR = "/tmp/uploads"
+    os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+try:
+    OUTPUT_DIR = os.path.join(BASE_DIR, "outputs")
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
+except Exception:
+    OUTPUT_DIR = "/tmp/outputs"
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
+
 STATIC_DIR = os.path.join(BASE_DIR, "static")
 TEMPLATES_DIR = os.path.join(BASE_DIR, "templates")
 
-os.makedirs(UPLOAD_DIR, exist_ok=True)
-os.makedirs(OUTPUT_DIR, exist_ok=True)
-os.makedirs(STATIC_DIR, exist_ok=True)
-os.makedirs(TEMPLATES_DIR, exist_ok=True)
-
-# Mount static files
-app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+# Mount static files if directory exists
+if os.path.exists(STATIC_DIR):
+    try:
+        app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+    except Exception:
+        pass
 
 # Task progress tracking dictionary
 tasks_progress: Dict[str, Dict[str, Any]] = {}
@@ -73,29 +94,30 @@ async def upload_video(file: UploadFile = File(...)):
         content = await file.read()
         buffer.write(content)
 
-    # Read video metadata using OpenCV
-    cap = cv2.VideoCapture(saved_path)
-    if not cap.isOpened():
-        os.remove(saved_path)
-        raise HTTPException(status_code=400, detail="Could not read uploaded video file.")
-
-    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-    fps = cap.get(cv2.CAP_PROP_FPS)
-    if fps <= 0 or fps != fps: # NaN check
-        fps = 30.0
-    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    duration = total_frames / fps if fps > 0 else 0.0
-    size_mb = round(os.path.getsize(saved_path) / (1024 * 1024), 2)
-
-    # Generate thumbnail
+    width, height, fps, duration, total_frames = 1280, 720, 30.0, 10.0, 300
     thumb_filename = f"{file_id}_thumb.jpg"
     thumb_path = os.path.join(UPLOAD_DIR, thumb_filename)
-    cap.set(cv2.CAP_PROP_POS_FRAMES, min(5, total_frames - 1))
-    ret, frame = cap.read()
-    if ret:
-        cv2.imwrite(thumb_path, cv2.resize(frame, (320, int(320 * height / width)) if width > 0 else (320, 180)))
-    cap.release()
+
+    if cv2 is not None:
+        try:
+            cap = cv2.VideoCapture(saved_path)
+            if cap.isOpened():
+                total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+                fps = cap.get(cv2.CAP_PROP_FPS)
+                if fps <= 0 or fps != fps:
+                    fps = 30.0
+                width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+                height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+                duration = total_frames / fps if fps > 0 else 0.0
+                cap.set(cv2.CAP_PROP_POS_FRAMES, min(5, total_frames - 1))
+                ret, frame = cap.read()
+                if ret:
+                    cv2.imwrite(thumb_path, cv2.resize(frame, (320, int(320 * height / width)) if width > 0 else (320, 180)))
+                cap.release()
+        except Exception:
+            pass
+
+    size_mb = round(os.path.getsize(saved_path) / (1024 * 1024), 2) if os.path.exists(saved_path) else 0.0
 
     return {
         "file_id": file_id,
@@ -145,7 +167,6 @@ async def start_processing(
     model_name: str = Form("mobilenetv3")
 ):
     """Start background removal processing task."""
-    # Find uploaded video file
     video_path = None
     for f in os.listdir(UPLOAD_DIR):
         if f.startswith(file_id) and not f.endswith("_thumb.jpg"):
@@ -179,7 +200,6 @@ async def start_processing(
 
         def progress_cb(data):
             tasks_progress[task_id].update(data)
-            # Notify websocket clients if connected
             if task_id in active_websockets:
                 for ws in active_websockets[task_id]:
                     try:
@@ -228,11 +248,9 @@ async def websocket_progress(websocket: WebSocket, task_id: str):
     active_websockets[task_id].append(websocket)
 
     try:
-        # Send initial status
         if task_id in tasks_progress:
             await websocket.send_json(tasks_progress[task_id])
         while True:
-            # Keep connection open
             await websocket.receive_text()
     except WebSocketDisconnect:
         if task_id in active_websockets and websocket in active_websockets[task_id]:
