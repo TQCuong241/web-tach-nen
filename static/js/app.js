@@ -317,26 +317,45 @@ document.addEventListener('DOMContentLoaded', () => {
             progressCard.classList.remove('hidden');
             progressCard.scrollIntoView({ behavior: 'smooth' });
 
-            if (terminalBox) terminalBox.innerHTML = '<div>[SYSTEM LOG] Phân tích video và nạp mô hình IS-Net DIS Engine (bóc 10 khung hình test từ main copy.py)...</div>';
+            if (terminalBox) terminalBox.innerHTML = '<div>[SYSTEM LOG] Phân tích video và bóc 10 khung hình test...</div>';
 
             const upscaleSelect = document.getElementById('upscaleSelect');
             const targetSizeSelect = document.getElementById('targetSizeSelect');
 
-            const formData = new FormData();
-            formData.append('file_id', currentFileId);
-            formData.append('num_frames', '10');
-            formData.append('target_size', targetSizeSelect ? targetSizeSelect.value : '1000');
-            formData.append('upscale_factor', upscaleSelect ? upscaleSelect.value : '3.0');
-            formData.append('model_name', modelSelect.value);
+            if (currentFileId && window.location.hostname === 'localhost') {
+                const formData = new FormData();
+                formData.append('file_id', currentFileId);
+                formData.append('num_frames', '10');
+                formData.append('target_size', targetSizeSelect ? targetSizeSelect.value : '1000');
+                formData.append('upscale_factor', upscaleSelect ? upscaleSelect.value : '3.0');
+                formData.append('model_name', modelSelect.value);
 
+                try {
+                    const resp = await fetch('/api/process-test-10', { method: 'POST', body: formData });
+                    const data = await resp.json();
+                    if (data.task_id) {
+                        connectWebSocket(data.task_id, true);
+                        return;
+                    }
+                } catch (err) {}
+            }
+
+            // Client-side Browser Mode for Vercel
             try {
-                const resp = await fetch('/api/process-test-10', { method: 'POST', body: formData });
-                const data = await resp.json();
-                if (data.task_id) {
-                    connectWebSocket(data.task_id, true);
-                }
-            } catch (err) {
-                appendLog(`Lỗi khởi tạo test: ${err.message}`);
+                const res = await window.clientVideoProcessor.extractTestFrames({
+                    videoElement: sourceVideoElement,
+                    numFrames: 10,
+                    targetSize: parseInt(targetSizeSelect ? targetSizeSelect.value : '1000'),
+                    progressCallback: updateProgressUI,
+                    logCallback: appendLog
+                });
+                showTest10Result(res);
+            } catch (e) {
+                appendLog(`Lỗi bóc tách frame: ${e.message}`);
+                progressCard.classList.add('hidden');
+                controlsCard.classList.remove('disabled-state');
+                startProcessBtn.disabled = false;
+                startTest10Btn.disabled = false;
             }
         });
     }

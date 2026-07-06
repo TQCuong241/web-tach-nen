@@ -1,8 +1,7 @@
 /**
  * CYBERMATTE AI - CLIENT-SIDE BROWSER FRAME ENGINE
  * Features AI Segmentation + White De-Fringing & Edge Matte Refinement.
- * Eliminates white border halos around wings, horns, and complex subjects 100%.
- * Preserves exact original video duration and frame timing.
+ * Includes 10-Frame Test Extractor with real-time log output.
  */
 
 class ClientVideoProcessor {
@@ -21,7 +20,7 @@ class ClientVideoProcessor {
                 });
 
                 this.segmenter.setOptions({
-                    modelSelection: 1, // 0 for general, 1 for landscape/quality
+                    modelSelection: 1,
                 });
 
                 this.isInitialized = true;
@@ -30,6 +29,129 @@ class ClientVideoProcessor {
                 console.warn("[ClientEngine] Could not init MediaPipe SelfieSegmentation:", e);
             }
         }
+    }
+
+    /**
+     * Extract and process 10 test frames directly in browser with real-time log output
+     */
+    async extractTestFrames({
+        videoElement,
+        numFrames = 10,
+        targetSize = 1000,
+        progressCallback,
+        logCallback
+    }) {
+        await this.init();
+
+        const duration = videoElement.duration || 10.0;
+        const width = videoElement.videoWidth || 1280;
+        const height = videoElement.videoHeight || 720;
+        const outSize = targetSize > 0 ? targetSize : width;
+
+        const sourceCanvas = document.createElement('canvas');
+        sourceCanvas.width = width;
+        sourceCanvas.height = height;
+        const sourceCtx = sourceCanvas.getContext('2d', { willReadFrequently: true });
+
+        const outputCanvas = document.createElement('canvas');
+        outputCanvas.width = outSize;
+        outputCanvas.height = outSize;
+        const outputCtx = outputCanvas.getContext('2d', { willReadFrequently: true });
+
+        const extractedImages = [];
+        const logMessages = [];
+        const frameInterval = duration / numFrames;
+
+        for (let i = 0; i < numFrames; i++) {
+            const frameStart = Date.now();
+            const seekTime = i * frameInterval;
+            videoElement.currentTime = seekTime;
+
+            await new Promise(resolve => {
+                const onSeeked = () => {
+                    videoElement.removeEventListener('seeked', onSeeked);
+                    resolve();
+                };
+                videoElement.addEventListener('seeked', onSeeked);
+            });
+
+            sourceCtx.drawImage(videoElement, 0, 0, width, height);
+
+            if (this.segmenter) {
+                await new Promise((resolve) => {
+                    this.segmenter.onResults((results) => {
+                        outputCtx.save();
+                        outputCtx.clearRect(0, 0, outSize, outSize);
+
+                        const aspect = width / height;
+                        let drawW = outSize;
+                        let drawH = outSize;
+                        let offsetX = 0;
+                        let offsetY = 0;
+                        if (aspect > 1) {
+                            drawH = outSize / aspect;
+                            offsetY = (outSize - drawH) / 2;
+                        } else {
+                            drawW = outSize * aspect;
+                            offsetX = (outSize - drawW) / 2;
+                        }
+
+                        outputCtx.drawImage(results.segmentationMask, offsetX, offsetY, drawW, drawH);
+                        outputCtx.globalCompositeOperation = 'source-in';
+                        outputCtx.drawImage(results.image, offsetX, offsetY, drawW, drawH);
+                        outputCtx.restore();
+
+                        // White De-fringing Pass
+                        const imgData = outputCtx.getImageData(0, 0, outSize, outSize);
+                        const pixels = imgData.data;
+                        for (let k = 0; k < pixels.length; k += 4) {
+                            const r = pixels[k];
+                            const g = pixels[k + 1];
+                            const b = pixels[k + 2];
+                            const a = pixels[k + 3];
+                            if (a > 0) {
+                                if (r > 230 && g > 230 && b > 230) {
+                                    pixels[k + 3] = 0;
+                                } else if (r > 195 && g > 195 && b > 195) {
+                                    const brightness = (r + g + b) / 3.0;
+                                    const factor = (230.0 - brightness) / 35.0;
+                                    pixels[k + 3] = Math.floor(a * Math.max(0, factor));
+                                }
+                            }
+                        }
+                        outputCtx.putImageData(imgData, 0, 0);
+                        resolve();
+                    });
+                    this.segmenter.send({ image: sourceCanvas });
+                });
+            } else {
+                this._drawFallbackMatting(sourceCtx, outputCtx, width, height, 'transparent', '#00FF00', null);
+            }
+
+            const frameBlob = await new Promise(res => outputCanvas.toBlob(res, 'image/png'));
+            const blobUrl = URL.createObjectURL(frameBlob);
+            extractedImages.push(blobUrl);
+
+            const elapsedSec = (Date.now() - frameStart) / 1000.0;
+            const logLine = `[${i + 1}/${numFrames}] Frame ${Math.floor(seekTime * 30)} -> frame_${String(i + 1).padStart(3, '0')}.png (${elapsedSec.toFixed(2)}s)`;
+            logMessages.push(logLine);
+
+            if (logCallback) logCallback(logLine);
+            if (progressCallback) {
+                progressCallback({
+                    status: 'processing',
+                    current_frame: i + 1,
+                    total_frames: numFrames,
+                    percent: Math.floor(((i + 1) / numFrames) * 100)
+                });
+            }
+        }
+
+        return {
+            extracted_images: extractedImages,
+            log_messages: logMessages,
+            download_url: extractedImages[0]
+        };
     }
 
     /**
@@ -98,17 +220,12 @@ class ClientVideoProcessor {
                         outputCtx.save();
                         outputCtx.clearRect(0, 0, width, height);
 
-                        // 1. Draw segmentation mask
                         outputCtx.drawImage(results.segmentationMask, 0, 0, width, height);
-
-                        // 2. Composite original subject frame inside mask
                         outputCtx.globalCompositeOperation = 'source-in';
                         outputCtx.drawImage(results.image, 0, 0, width, height);
 
                         outputCtx.restore();
 
-                        // 3. WHITE DE-FRINGING & EDGE MATTE REFINEMENT PASS
-                        // Eliminates white border halos around wings, horns, and tail
                         const imgData = outputCtx.getImageData(0, 0, width, height);
                         const pixels = imgData.data;
                         for (let i = 0; i < pixels.length; i += 4) {
@@ -118,11 +235,9 @@ class ClientVideoProcessor {
                             const a = pixels[i + 3];
 
                             if (a > 0) {
-                                // Pure or near-white background pixels -> 100% transparent
                                 if (r > 230 && g > 230 && b > 230) {
                                     pixels[i + 3] = 0;
                                 } else if (r > 195 && g > 195 && b > 195) {
-                                    // Feather white border halo fringe smoothly
                                     const brightness = (r + g + b) / 3.0;
                                     const factor = (230.0 - brightness) / 35.0;
                                     pixels[i + 3] = Math.floor(a * Math.max(0, factor));
@@ -131,7 +246,6 @@ class ClientVideoProcessor {
                         }
                         outputCtx.putImageData(imgData, 0, 0);
 
-                        // 4. Composite background behind refined subject
                         if (bgType !== 'transparent') {
                             outputCtx.save();
                             outputCtx.globalCompositeOperation = 'destination-over';
@@ -209,7 +323,6 @@ class ClientVideoProcessor {
             const g = data[i + 1];
             const b = data[i + 2];
 
-            // Remove white / light background pixels
             if (r > 230 && g > 230 && b > 230) {
                 data[i + 3] = 0;
             } else if (g > 100 && g > r * 1.4 && g > b * 1.4) {
