@@ -230,7 +230,9 @@ async def start_processing(
     blur_radius: int = Form(15),
     output_format: str = Form("mp4"),
     downsample_ratio: float = Form(1.0),
-    model_name: str = Form("max")
+    model_name: str = Form("max"),
+    upscale_factor: float = Form(1.0),
+    target_size: int = Form(0)
 ):
     """Start background removal processing task."""
     video_path = None
@@ -285,6 +287,8 @@ async def start_processing(
                 downsample_ratio=downsample_ratio,
                 model_name=model_name,
                 engine_type=model_name,
+                upscale_factor=upscale_factor,
+                target_size=target_size,
                 progress_callback=progress_cb
             )
             tasks_progress[task_id]["status"] = "completed"

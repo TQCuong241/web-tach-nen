@@ -266,10 +266,15 @@ document.addEventListener('DOMContentLoaded', () => {
             formData.append('bg_type', selectedBgMode);
             formData.append('bg_color', bgColorInput.value);
             if (currentBgImageId) formData.append('bg_image_id', currentBgImageId);
+            const upscaleSelect = document.getElementById('upscaleSelect');
+            const targetSizeSelect = document.getElementById('targetSizeSelect');
+
             formData.append('blur_radius', blurRadiusInput.value);
             formData.append('output_format', outputFormatSelect.value);
             formData.append('downsample_ratio', downsampleSelect.value);
             formData.append('model_name', selectedModel);
+            formData.append('upscale_factor', upscaleSelect ? upscaleSelect.value : '1.0');
+            formData.append('target_size', targetSizeSelect ? targetSizeSelect.value : '0');
 
             if (isImageFile) {
                 try {

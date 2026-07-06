@@ -5,7 +5,7 @@ import zipfile
 import subprocess
 import shutil
 
-# Safe imports for optional heavy libraries on Vercel
+# Safe imports for optional heavy libraries
 try:
     import cv2
 except ImportError:
@@ -51,12 +51,12 @@ def upscale_image(img, scale_factor=2.0):
 
 class SAM2ViTMattingEngine:
     """
-    Quy trình Cao cấp VIP (--Max): IS-Net DIS (Dichotomous Image Segmentation) High-Precision Engine.
-    Tách nền chuẩn sắc nét cao 100% không làm lùng lỗ hay tạo rác đen trên chủ thể.
+    Quy trình Cao cấp VIP (--Max): IS-Net DIS (Dichotomous Image Segmentation) High-Precision Engine
+    từ main copy.py của bạn. Bóc tách từng khung hình ảnh tĩnh (Frame-by-Frame Matting) sắc nét 100%.
     """
     def __init__(self, model_name="isnet-general-use", device=None):
         from rembg import remove, new_session
-        print(f"[SAM2ViTMattingEngine] Loading IS-Net DIS High-Precision AI ('{model_name}')...")
+        print(f"[SAM2ViTMattingEngine] Loading MAX High-Precision AI ('{model_name}')...")
         self.session = new_session(model_name)
         self.remove = remove
 
@@ -65,17 +65,19 @@ class SAM2ViTMattingEngine:
 
     def remove_bg(self, pil_img, upscale_factor=1.0, is_sequence=False):
         orig_size = pil_img.size
-        if pil_img.mode != 'RGBA':
-            work_img = pil_img.convert('RGBA')
+        if upscale_factor > 1.0:
+            work_img = upscale_image(pil_img, upscale_factor)
         else:
             work_img = pil_img
 
+        if work_img.mode != 'RGBA':
+            work_img = work_img.convert('RGBA')
+
+        # Thực hiện tách nền bằng IS-Net High Precision Model từ main copy.py
+        no_bg_pil = self.remove(work_img, session=self.session)
+
         if upscale_factor > 1.0:
-            work_img = upscale_image(work_img, upscale_factor)
-            no_bg_pil = self.remove(work_img, session=self.session)
             no_bg_pil = no_bg_pil.resize(orig_size, Image.Resampling.LANCZOS)
-        else:
-            no_bg_pil = self.remove(work_img, session=self.session)
 
         return no_bg_pil
 
@@ -83,7 +85,6 @@ class SAM2ViTMattingEngine:
 class RVMMattingEngine:
     """
     Robust Video Matting (RVM) Engine (--Min) bởi ByteDance (PeterL1n).
-    Hỗ trợ Recurrent State (r1..r4) duy trì tính nhất quán theo thời gian cho Video (chống nhấp nháy).
     """
     def __init__(self, model_name="mobilenetv3", device=None):
         if torch is None:
@@ -140,8 +141,7 @@ class RVMMattingEngine:
 
 class VideoMattingEngine:
     """
-    Unified AI Video Matting Engine supporting both --Max (IS-Net DIS High-Precision)
-    and --Min (Robust Video Matting).
+    Unified AI Video Matting Engine supporting --Max (main copy.py IS-Net DIS) and --Min.
     """
     def __init__(self, model_name="mobilenetv3", device=None, engine_type="max"):
         self.engine_type = engine_type.lower()
@@ -166,7 +166,7 @@ class VideoMattingEngine:
         if self.active_engine and hasattr(self.active_engine, 'reset_rec_states'):
             self.active_engine.reset_rec_states()
 
-    def process_frame(self, frame_bgr, downsample_ratio=1.0):
+    def process_frame(self, frame_bgr, downsample_ratio=1.0, upscale_factor=1.0):
         if cv2 is None or np is None:
             raise RuntimeError("OpenCV / Numpy is required for server frame processing.")
 
@@ -174,7 +174,7 @@ class VideoMattingEngine:
         pil_img = Image.fromarray(frame_rgb)
 
         if self.active_engine:
-            no_bg_pil = self.active_engine.remove_bg(pil_img, upscale_factor=1.0, is_sequence=True)
+            no_bg_pil = self.active_engine.remove_bg(pil_img, upscale_factor=upscale_factor, is_sequence=True)
             return np.array(no_bg_pil)
         else:
             hsv = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2HSV)
@@ -255,11 +255,15 @@ def process_video_task(
     downsample_ratio: float = 1.0,
     model_name: str = 'max',
     engine_type: str = 'max',
+    upscale_factor: float = 1.0,
+    target_size: int = 0,
     progress_callback = None
 ):
     """
-    Processes 100% of video frames (frame-by-frame) maintaining EXACT original FPS and duration!
-    If source video has 240 frames (10 seconds @ 24fps), output video will have 240 frames (10 seconds @ 24fps)!
+    LUỒNG CHUẨN TỪ MAIN COPY.PY:
+    1. Mở video, đọc tổng số frame (ví dụ 240 frames) & FPS gốc (ví dụ 24 FPS).
+    2. Phân tách bóc nền từng khung hình ảnh tĩnh (Frame 1 -> Frame 240) sử dụng IS-Net DIS High Precision AI.
+    3. Ghép khung hình đã tách nền lại thành video hoàn chỉnh đúng với tốc độ FPS và thời lượng video gốc!
     """
     if cv2 is None or np is None:
         raise RuntimeError("OpenCV is required for video file processing.")
@@ -295,6 +299,8 @@ def process_video_task(
     temp_video_out = os.path.join(output_dir, f"temp_processed.{'webm' if output_format == 'webm' else 'mp4'}")
     final_output_path = os.path.join(output_dir, f"{base_name}_nobg.{output_format if output_format != 'zip_png' else 'zip'}")
 
+    out_w, out_h = (target_size, target_size) if target_size > 0 else (width, height)
+
     writer = None
     frames_gif = []
     png_dir = os.path.join(output_dir, "png_frames") if output_format == 'zip_png' else None
@@ -303,24 +309,41 @@ def process_video_task(
 
     if output_format == 'webm' and bg_type == 'transparent':
         fourcc = cv2.VideoWriter_fourcc(*'VP90')
-        writer = cv2.VideoWriter(temp_video_out, fourcc, fps, (width, height), isColor=True)
+        writer = cv2.VideoWriter(temp_video_out, fourcc, fps, (out_w, out_h), isColor=True)
         if not writer.isOpened():
             fourcc = cv2.VideoWriter_fourcc(*'VP80')
-            writer = cv2.VideoWriter(temp_video_out, fourcc, fps, (width, height), isColor=True)
+            writer = cv2.VideoWriter(temp_video_out, fourcc, fps, (out_w, out_h), isColor=True)
     elif output_format != 'gif' and output_format != 'zip_png':
         fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-        writer = cv2.VideoWriter(temp_video_out, fourcc, fps, (width, height))
+        writer = cv2.VideoWriter(temp_video_out, fourcc, fps, (out_w, out_h))
 
     start_time = time.time()
     frame_idx = 0
 
+    # Process EVERY SINGLE FRAME (100% frame-by-frame)
     while True:
         ret, frame_bgr = cap.read()
         if not ret:
             break
         frame_idx += 1
 
-        rgba_np = engine.process_frame(frame_bgr, downsample_ratio=downsample_ratio)
+        frame_start = time.time()
+        rgba_np = engine.process_frame(frame_bgr, downsample_ratio=downsample_ratio, upscale_factor=upscale_factor)
+
+        # Căn vuông sprite nếu target_size > 0 (từ main copy.py)
+        if target_size > 0:
+            h_f, w_f, _ = rgba_np.shape
+            if w_f > h_f:
+                diff = w_f - h_f
+                top_pad, bottom_pad = diff // 2, diff - diff // 2
+                left_pad, right_pad = 0, 0
+            else:
+                diff = h_f - w_f
+                left_pad, right_pad = diff // 2, diff - diff // 2
+                top_pad, bottom_pad = 0, 0
+
+            padded = cv2.copyMakeBorder(rgba_np, top_pad, bottom_pad, left_pad, right_pad, cv2.BORDER_CONSTANT, value=(0, 0, 0, 0))
+            rgba_np = cv2.resize(padded, (target_size, target_size), interpolation=cv2.INTER_AREA)
 
         if output_format == 'zip_png':
             pil_rgba = Image.fromarray(rgba_np)
@@ -331,8 +354,8 @@ def process_video_task(
             composite_bgr = engine.render_composite(rgba_np, frame_bgr, bg_type, rgb_color, bg_image_np, blur_radius)
             composite_rgb = cv2.cvtColor(composite_bgr, cv2.COLOR_BGR2RGB)
             pil_frame = Image.fromarray(composite_rgb)
-            if width > 640:
-                new_h = int(height * (640.0 / width))
+            if out_w > 640:
+                new_h = int(out_h * (640.0 / out_w))
                 pil_frame = pil_frame.resize((640, new_h), Image.Resampling.LANCZOS)
             frames_gif.append(pil_frame)
 
@@ -343,8 +366,11 @@ def process_video_task(
                 writer.write(composite_bgr)
 
         elapsed = time.time() - start_time
+        frame_elapsed = time.time() - frame_start
         current_fps = frame_idx / elapsed if elapsed > 0 else 0.0
         percent = int((frame_idx / total_frames) * 100) if total_frames > 0 else 0
+
+        print(f"[{frame_idx}/{total_frames}] Frame {frame_idx-1} -> Processed ({frame_elapsed:.2f}s)")
 
         if progress_callback:
             progress_callback({
